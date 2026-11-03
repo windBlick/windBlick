@@ -21,26 +21,35 @@ Use a clear separation of responsibilities:
 
 **Frontend (web):** HTML, CSS, and modern JavaScript (ES modules) by default. Focus on accessible, understandable user journeys: upload/capture photo, select turbines on a map, associate reference points, inspect/edit results, and explain uncertainty. Browser-specific permission and sensor handling belongs here. Do not implement authoritative geometry/calibration algorithms in the frontend.
 
-**Backend:** Node.js with Express and an HTTP API. The backend owns request validation, coordinate transformations, camera geometry, reference-point calibration, turbine model geometry, image projection/composition, and any implemented visibility/occlusion calculations. Keep these operations in testable modules, independent of Express request/response handling.
+**Optional frontend framework:** [Open Pioneer Trails](https://open-pioneer.dev/trails-docs/Introduction/) is a possible choice, **not a requirement**. This is its official name. It is a client-side web application framework based on React, with a package-based architecture, Vite tooling, JavaScript/TypeScript support, and Web Component delivery. Adopting it would introduce corresponding frontend structure and tooling; decide this explicitly as a team rather than treating it as a drop-in script. It does not determine the Python backend framework or change the API boundary.
 
-**API boundary:** Frontend and backend communicate only through a documented API, not by importing each other's implementation modules. The exact endpoints and schemas are **not decided yet**. Agree on and document the request/response contract before implementing dependent features. Anticipated inputs include a photograph, optional camera/sensor metadata, turbine locations/dimensions, and matched image/map reference points; outputs may include a visualization and calibration diagnostics. Do not invent endpoints, required fields, or response formats as established facts.
+**Backend:** Python with an HTTP API. The API framework is **not decided yet**; keep the architecture framework-agnostic until the team chooses one. The backend owns request validation, coordinate transformations, camera geometry, reference-point calibration, turbine model geometry, image projection/composition, and any implemented visibility/occlusion calculations. Keep these operations in testable Python modules, independent of framework-specific request/response handling. Thin API adapters validate and translate transport data, invoke domain functions, and map results or domain errors to the agreed responses.
 
-**Deployment:** A continuously available backend is possible but not a commitment. Keep hosting-dependent logic and configuration separate from domain logic; never hard-code server URLs or credentials.
+Use mature Python geospatial, image-processing, and computer-vision packages instead of reimplementing established functionality. Candidates include pyproj for CRS transformations, Rasterio for raster/elevation data, Shapely or GeoPandas where vector processing is needed, NumPy/SciPy for numerical work, OpenCV for camera geometry and calibration, and Pillow for image handling/composition. Select only packages needed for the agreed approach; check their assumptions, licenses, supported Python versions, and native dependencies. Library availability does not remove the need to validate coordinate conventions, height references, or calibration quality.
+
+**API boundary:** Frontend and backend communicate only through a documented API, not by importing each other's implementation modules. The exact endpoints and schemas are **not decided yet**. Agree on and document the request/response contract before implementing dependent features. Anticipated inputs include a photograph, optional camera/sensor metadata, turbine locations/dimensions, and matched image/map reference points; outputs may include a visualization and calibration diagnostics. Do not invent endpoints, required fields, or response formats as established facts. Define serializable transport models separately from internal Python models; do not expose framework objects, NumPy arrays, or geospatial library objects directly as the contract. Specify image-coordinate mapping, CRS, axis order, units, height references, optional/missing values, and validation errors consistently for both sides.
+
+**Deployment:** A continuously available backend is possible but not a commitment. Keep hosting-dependent logic and configuration separate from domain logic; never hard-code server URLs or credentials. Use an isolated Python environment and declare the supported Python version, dependencies, and tool configuration in `backend/pyproject.toml`. Agree on a reproducible dependency-locking approach and document any required native libraries or transformation grids. Choose production serving and process management only after the API framework and hosting target are agreed; frontend build tooling is separate from the backend runtime.
+
+Keep architecture documentation in `docs/` aligned with the Python module boundaries, processing/data flow, selected library responsibilities, API contract, optional frontend framework decision, and deployment assumptions. Record unresolved choices as unresolved rather than presenting suggested packages, commands, or services as already adopted.
 
 Suggested initial layout (adapt to existing files after team agreement):
 
 ```text
-frontend/                Browser UI, camera/sensor capture, map and point selection
-backend/src/api/         Express routes, validation, HTTP error handling
-backend/src/geo/         CRS, elevation, geospatial data handling
-backend/src/camera/      Camera intrinsics, orientation, projection
-backend/src/calibration/ Reference-point matching and pose estimation
-backend/src/rendering/   Turbine geometry and image composition
-backend/tests/           Unit and integration tests
-docs/                   Architecture, API contract, decisions, evaluation
+frontend/                           Browser UI, camera/sensor capture, map and point selection
+backend/pyproject.toml               Python metadata, dependencies, tool configuration
+backend/src/wind_turbine_visualization/
+  __init__.py                       Python package entry
+  api/                              HTTP adapters, validation, error handling; framework TBD
+  geo/                              CRS, elevation, geospatial data handling
+  camera/                           Camera intrinsics, orientation, projection
+  calibration/                      Reference-point matching and pose estimation
+  rendering/                        Turbine geometry and image composition
+backend/tests/                      Python unit and integration tests
+docs/                               Architecture, API contract, decisions, evaluation
 ```
 
-Avoid adding frontend frameworks, GIS engines, image-processing libraries, databases, or cloud services without a concrete need and team agreement. React/Vue, rendering libraries, persistent storage, and the deployment target remain open decisions.
+Avoid adding frontend frameworks, GIS engines, image-processing libraries, databases, or cloud services without a concrete need and team agreement. Prefer an appropriate established Python package over a custom implementation when functionality is needed. The Python API framework, adoption of Open Pioneer Trails or another frontend framework, specific rendering libraries, persistent storage, and the deployment target remain open decisions. If Open Pioneer Trails is chosen, adapt the internal frontend layout to its conventions while retaining the backend boundary.
 
 ## 3. Geospatial and camera correctness (critical)
 
@@ -79,18 +88,18 @@ Browser support varies by device, operating system, browser, permissions, and HT
 
 ## 5. Coding standards
 
-- Write code, identifiers, comments, JSDoc, logs, and technical documentation **in English**. User-facing text should be clear to the chosen audience; keep it separate from code and ready for localization.
-- Default to modern **JavaScript with ES modules** for frontend and backend. Do not migrate to TypeScript or a frontend framework without a team decision.
+- Write code, identifiers, comments, Python docstrings, JSDoc, logs, and technical documentation **in English**. User-facing text should be clear to the chosen audience; keep it separate from code and ready for localization.
+- Use **Python for the backend** and modern **JavaScript with ES modules** for the frontend by default. Add Python type annotations to public functions and shared data models. Do not introduce TypeScript or adopt Open Pioneer Trails or another frontend framework without a team decision.
 - Prefer small, cohesive, testable functions and modules. Keep geometry functions pure and deterministic where possible. Avoid unnecessary abstractions, hidden global state, duplicated calculations, and magic constants.
-- Use descriptive names: `cameraPosition`, `referencePointElevationMeters`, `rotorDiameterMeters`, not `p`, `h`, or `d` where meaning is ambiguous.
-- Use `camelCase` for variables/functions, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for genuine constants. Prefer consistent `kebab-case` file names if the repository has no existing convention.
-- Add **JSDoc** to exported functions, public interfaces, and nontrivial geometric or numerical algorithms. Specify parameters, return types, units, coordinate frames, important assumptions, and possible errors. Use concise English comments to explain *why*, especially for non-obvious math; do not restate every line.
-- Use `const` by default, `let` when reassignment is required, `async`/`await` for async code, and explicit error handling. Avoid silent catch blocks and unhandled promise rejections.
-- Choose one formatter/linter configuration for the repository (for example, Prettier and ESLint) and run it consistently; do not introduce incompatible duplicate style rules.
+- Use descriptive names: Python `camera_position`, `reference_point_elevation_meters`, `rotor_diameter_meters`; JavaScript `cameraPosition`, `referencePointElevationMeters`, `rotorDiameterMeters`. Avoid `p`, `h`, or `d` where meaning is ambiguous.
+- In Python, use `snake_case` for variables/functions and module names, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for genuine constants. In JavaScript, use `camelCase` for variables/functions, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for genuine constants. Prefer consistent `kebab-case` frontend file names if the repository has no existing convention; follow framework conventions if one is adopted.
+- Add **Python docstrings** to public backend functions/interfaces and nontrivial geometric or numerical algorithms; retain **JSDoc** for exported JavaScript functions and public interfaces. Specify parameters, return types, units, coordinate frames, important assumptions, and possible errors. Use type annotations for Python types and docstrings for their semantics. Use concise English comments to explain *why*, especially for non-obvious math; do not restate every line.
+- In JavaScript, use `const` by default, `let` when reassignment is required, `async`/`await` for async code, and explicit error handling. Avoid silent catch blocks and unhandled promise rejections. In Python, handle expected exceptions explicitly, use context managers for resources, and avoid swallowed exceptions or mutable global request state. Keep module imports free of server startup and processing side effects. Choose concurrency based on the selected framework and measured workload; declaring a function async does not make CPU-heavy processing non-blocking.
+- Choose consistent formatter/linter configurations for each language (for example, Ruff for Python and Prettier/ESLint for JavaScript) and run them consistently; do not introduce incompatible duplicate style rules. Keep Python tool configuration in `backend/pyproject.toml` and document the agreed checks.
 - Keep secrets and environment-dependent values out of source control; use documented environment variables and a safe example configuration.
 - If existing code differs from these preferences, maintain consistency and propose a deliberate migration instead of mixing styles.
 
-JSDoc example (illustrative, not an API contract):
+JavaScript JSDoc example (illustrative, not an API contract or a reason to move authoritative geometry into the frontend):
 
 ```js
 /**
@@ -106,13 +115,14 @@ function calculateElevationAngle(horizontalDistanceMeters, heightDifferenceMeter
 
 ## 6. Quality, testing, and security
 
-- **Backend tests are expected**, especially for coordinate transforms, camera projection, turbine dimensions, calibration, and handling of incomplete or invalid metadata. Prefer the built-in `node:test` runner initially unless the repository adopts another runner.
+- **Backend tests are expected**, especially for coordinate transforms, camera projection, turbine dimensions, calibration, and handling of incomplete or invalid metadata. Prefer **pytest** initially unless the repository adopts another Python test runner. Test domain modules without a running HTTP server; add framework-specific API integration tests once the framework is chosen. Define the concrete test setup and coverage priorities as a team.
 - Test geometry with hand-checkable synthetic cases and explicit numeric tolerances. Include cases for degree/radian mix-ups, axis/order errors, different image orientations, terrain/elevation differences, insufficient reference points, and invalid/degenerate calibration setups.
-- Add API-level tests for validation, error responses, and upload handling after agreeing on the contract. No network access or live external geodata should be necessary for deterministic unit tests.
+- Add API-level tests for validation, error responses, and upload handling after agreeing on the contract. No network access or live external geodata should be necessary for deterministic unit tests. Exercise the selected Python libraries with small local fixtures and known expected results; do not replace the entire calculation pipeline with mocks. Keep any live-data integration tests separate.
 - Add regression fixtures from synthetic or consented images when available. Avoid committing private photographs, identifying EXIF metadata, or precise home locations without authorization.
-- Treat uploaded images and metadata as untrusted. Validate size, type, decoded image dimensions, input ranges, and point arrays; guard against resource exhaustion and unsafe file access. Return actionable errors without leaking server internals.
+- Treat uploaded images and metadata as untrusted. Validate size, type, decoded image dimensions, input ranges, and point arrays; guard against resource exhaustion and unsafe file access. Configure decoding and processing limits, use controlled temporary paths, and clean up resources on success and failure. Do not turn user input into shell commands or arbitrary server-side file/URL access. Return actionable errors without leaking server internals.
 - Treat location and photographs as sensitive user data. Minimize storage and logging, explain uploads, and do not retain original photos or precise locations by default without an explicit product decision and user consent.
 - Record open-data provenance, CRS, resolution, dates, and licenses. Respect map/imagery attribution and usage conditions.
+- Run the agreed Python tests and checks in CI using the documented Python version and reproducible dependencies, including required native geospatial components. Keep frontend checks separate and appropriate to the chosen frontend stack. Review dependency security updates; keep debug servers and tracebacks out of public production responses, configure HTTPS and allowed origins for deployment, and enforce processing limits. Authentication, storage, and background workers remain explicit product/architecture decisions.
 - Do not mark estimated turbine visibility as confirmed when vegetation/buildings have not been modeled reliably. Make limitations visible to the user.
 
 ## 7. Usability and evaluation
@@ -129,7 +139,7 @@ function calculateElevationAngle(horizontalDistanceMeters, heightDifferenceMeter
 2. For nontrivial work, briefly outline the approach, dependencies, assumptions, and any API or geospatial implications. Ask for a decision when a change affects a shared contract or open architecture choice.
 3. Keep changes scoped to the assigned GitHub Issue; use a feature branch and a pull request instead of pushing directly to `main`. Do not overwrite unrelated work.
 4. For contract changes, coordinate frontend/backend expectations and update the agreed API documentation and tests together. Do not silently break consumers.
-5. Write or update appropriate tests and documentation. Discover actual commands from `package.json`; do not report tests, linting, or builds as passed unless they were run.
+5. Write or update appropriate tests and documentation. Discover actual backend setup and check commands from `backend/pyproject.toml`, the README, and CI configuration; discover frontend commands from its chosen tooling and documentation. Once pytest is configured, `python -m pytest` from `backend/` is a possible test command, not proof that the test setup already exists. Do not assume an API server start command before the framework is chosen. Do not report tests, linting, or builds as passed unless they were run.
 6. In your final implementation summary, state what changed, what was tested, any remaining limitations, and any relevant assumptions or decisions still pending.
 7. Update this file only when a team-level convention or architecture decision has actually been agreed. Keep it concise and free of temporary task-specific instructions.
 
