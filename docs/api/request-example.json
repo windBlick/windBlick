@@ -1,0 +1,90 @@
+{
+  "api_version": "0.1",
+  "image": {
+    "width_px": 1200,
+    "height_px": 800,
+    "orientation": "normalized",
+    "captured_at": "2026-11-09T10:00:00Z"
+  },
+  "camera": {
+    "position": {
+      "longitude_deg": 7.5,
+      "latitude_deg": 52.1,
+      "elevation": {
+        "value_m": 61.6,
+        "datum": "DHHN2016_NHN",
+        "source": "fixture"
+      }
+    },
+    "orientation": {
+      "heading_deg": 45,
+      "pitch_deg": 0,
+      "roll_deg": 0,
+      "north_reference": "true"
+    },
+    "intrinsics": {
+      "kind": "physical_focal_length",
+      "focal_length_mm": 6,
+      "sensor_width_mm": 8,
+      "sensor_height_mm": 5.333333333333333
+    }
+  },
+  "turbines": [
+    {
+      "id": "turbine-1",
+      "name": "Illustrative approved turbine",
+      "position": {
+        "longitude_deg": 7.51,
+        "latitude_deg": 52.11,
+        "elevation": {
+          "value_m": 60,
+          "datum": "DHHN2016_NHN",
+          "source": "fixture"
+        }
+      },
+      "hub_height_m": 162,
+      "rotor_diameter_m": 175,
+      "turbine_type": "Illustrative model",
+      "status": "approved",
+      "source": {
+        "dataset": "nrw_renewable_energies_wfs",
+        "feature_type": "erneuerbare_energien_wfs:Windenergiegehnemigt",
+        "feature_id": "example-not-a-real-feature-1",
+        "retrieved_at": "2026-11-09T09:00:00Z",
+        "raw_status": "Windenergie - genehmigt"
+      }
+    },
+    {
+      "id": "turbine-2",
+      "position": {
+        "longitude_deg": 7.512,
+        "latitude_deg": 52.112,
+        "elevation": {
+          "value_m": 62,
+          "datum": "DHHN2016_NHN",
+          "source": "fixture"
+        }
+      },
+      "hub_height_m": 140,
+      "rotor_diameter_m": 150,
+      "status": "operating",
+      "source": {
+        "dataset": "nrw_renewable_energies_wfs",
+        "feature_type": "erneuerbare_energien_wfs:Windenergieinbetrieb",
+        "feature_id": "example-not-a-real-feature-2",
+        "retrieved_at": "2026-11-09T09:00:00Z",
+        "raw_status": "Windenergie - inbetrieb"
+      }
+    }
+  ],
+  "provenance": {
+    "/camera/orientation/heading_deg": {
+      "source": "user_input"
+    },
+    "/camera/intrinsics": {
+      "source": "fixture",
+      "note": "Illustrative effective sensor dimensions, not a device specification."
+    }
+  },
+  "reference_points": []
+}
