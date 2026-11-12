@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from wind-turbine-visualization!")
+"""Backend package for the wind turbine visualization API."""
