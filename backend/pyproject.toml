@@ -1,0 +1,26 @@
+[project]
+name = "wind-turbine-visualization"
+version = "0.1.0"
+description = "Backend API for visualizing the real-world scale of wind turbines in user photos."
+readme = "README.md"
+authors = [
+    { name = "Nils Große Beikel", email = "nils.grossebeikel@uni-muenster.de" },
+    { name = "Robin Gummels", email = "rgummels@uni-muenster.de" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.162.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.fastapi]
+entrypoint = "wind_turbine_visualization.main:app"
