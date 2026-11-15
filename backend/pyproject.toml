@@ -24,3 +24,10 @@ dev = [
 
 [tool.fastapi]
 entrypoint = "wind_turbine_visualization.main:app"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
