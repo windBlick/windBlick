@@ -30,6 +30,21 @@ FastAPI backend for the wind turbine visualization. Conventions: see [`AGENTS.md
 | `uv run ruff check .` / `uv run ruff format .` | Lint / format |
 | `uv add <pkg>` / `uv add --dev <pkg>` | Add a dependency (commit `uv.lock` too) |
 
+## Testing & CI
+
+Before pushing, run these from `backend/`:
+
+```bash
+uv run ruff format --check .   # check formatting
+uv run ruff check .            # check linting
+uv run pytest                  # run tests
+```
+
+Fix formatting problems automatically with `uv run ruff format .`
+(and `uv run ruff check . --fix` for auto-fixable lint issues).
+
+The CI workflow runs the same checks on every pull request.
+
 ## Structure
 
 ```text
