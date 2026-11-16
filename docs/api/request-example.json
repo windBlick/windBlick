@@ -3,7 +3,6 @@
   "image": {
     "width_px": 1200,
     "height_px": 800,
-    "orientation": "normalized",
     "captured_at": "2026-11-09T10:00:00Z"
   },
   "camera": {
