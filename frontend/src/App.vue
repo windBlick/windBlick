@@ -5,6 +5,7 @@ import StepIndicator from '@/components/layout/StepIndicator.vue'
 import StatusBanner from '@/components/layout/StatusBanner.vue'
 import OnboardingModal from '@/components/onboarding/OnboardingModal.vue'
 import PhotoDropzone from '@/components/step1-upload/PhotoDropzone.vue'
+import ExamplePreview from '@/components/step1-upload/ExamplePreview.vue'
 
 // ============================================================================
 // UI & Workflow Navigation State
@@ -90,12 +91,6 @@ function runMockPreview() {
 
   setTimeout(() => {
     isLoading.value = false
-
-    // Uncomment the next lines to test how the yellow warning banner looks in Step 3:
-    // warnings.value = [
-    //   { code: 'TURBINE_OUTSIDE_FRAME', message: 'WT 02 lies partially outside the camera field of view.' }
-    // ]
-
     currentStep.value = 3
   }, 600)
 }
@@ -147,7 +142,7 @@ function runMockPreview() {
     </div>
 
     <!-- Main Workflow Area -->
-    <main class="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
+    <main class="mx-auto max-w-6xl px-4 pt-8 pb-16 sm:px-6">
       <!-- 1. Global Error Banner (shown above any active step when an error occurs) -->
       <div v-if="errorMessage || validationErrors.length > 0" class="mb-6">
         <StatusBanner
@@ -161,17 +156,27 @@ function runMockPreview() {
       </div>
 
       <!-- ====================================================================
-           STEP 1: Photo Upload Dropzone
+           STEP 1: Photo Upload Dropzone & Side-by-Side Example Preview
            ==================================================================== -->
       <section v-if="currentStep === 1">
-        <PhotoDropzone
-          :photo-file="photoFile"
-          :photo-preview-url="photoPreviewUrl"
-          @file-selected="handleFileSelected"
-          @clear-file="clearPhoto"
-          @open-tips="showPhotoTips = true"
-          @next-step="goToStep(2)"
-        />
+        <div class="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
+          <!-- Left Column (7/12): PhotoDropzone -->
+          <div class="min-w-0 lg:col-span-7">
+            <PhotoDropzone
+              :photo-file="photoFile"
+              :photo-preview-url="photoPreviewUrl"
+              @file-selected="handleFileSelected"
+              @clear-file="clearPhoto"
+              @open-tips="showPhotoTips = true"
+              @next-step="goToStep(2)"
+            />
+          </div>
+
+          <!-- Right Column (5/12): ExamplePreview (equal height) -->
+          <div class="min-w-0 lg:col-span-5">
+            <ExamplePreview />
+          </div>
+        </div>
       </section>
 
       <!-- ====================================================================

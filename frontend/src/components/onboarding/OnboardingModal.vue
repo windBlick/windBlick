@@ -125,8 +125,7 @@ function closeModal() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
-        class="modal-card flex h-[560px] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-      >
+        class="modal-card flex h-[560px] max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"      >
         <!-- 1. Header Bar (Close Button) -->
         <div class="flex h-12 shrink-0 items-center justify-end px-5 pt-2">
           <button
@@ -142,8 +141,7 @@ function closeModal() {
         </div>
 
         <!-- 2. Animated Slide Content Area -->
-        <div class="relative flex-1 overflow-hidden px-10">
-          <Transition :name="transitionName" mode="out-in">
+        <div class="relative flex-1 overflow-y-auto overflow-x-hidden px-5 sm:px-10">          <Transition :name="transitionName" mode="out-in">
             <div :key="activeSlide" class="flex h-full flex-col">
               <!-- SLIDE 1: Intro Layout (Logo, Title, Description, Disclaimer Box) -->
               <template v-if="currentSlide.type === 'intro'">
@@ -158,8 +156,7 @@ function closeModal() {
 
                 <h2
                   id="onboarding-title"
-                  class="mt-2 text-center text-[25px] font-bold tracking-tight text-slate-900"
-                >
+                  class="mt-2 text-center text-xl font-bold tracking-tight text-slate-900 sm:text-[25px]"                >
                   {{ currentSlide.title }}
                 </h2>
 
@@ -196,8 +193,7 @@ function closeModal() {
 
                 <h2
                   id="onboarding-title"
-                  class="mt-7 text-center text-[25px] font-bold tracking-tight text-slate-900"
-                >
+                  class="mt-5 text-center text-xl font-bold tracking-tight text-slate-900 sm:mt-7 sm:text-[25px]"                >
                   {{ currentSlide.title }}
                 </h2>
 
@@ -210,8 +206,7 @@ function closeModal() {
         </div>
 
         <!-- 3. Footer Navigation Bar -->
-        <div class="grid h-[76px] shrink-0 grid-cols-3 items-center border-t border-slate-100 px-9">
-          <!-- Footer Left: "Skip intro" (Slides 1–3) / "Don't show again" Checkbox (Slide 4) -->
+        <div class="flex min-h-[72px] shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 sm:grid sm:h-[76px] sm:grid-cols-3 sm:px-9 sm:py-0">          <!-- Footer Left: "Skip intro" (Slides 1–3) / "Don't show again" Checkbox (Slide 4) -->
           <div class="justify-self-start">
             <button
               v-if="!isLastSlide"

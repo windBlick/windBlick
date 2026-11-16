@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // ============================================================================
 // Props & Emits
@@ -25,13 +25,32 @@ const ALLOWED_MIME_TYPES = ['image/jpeg']
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg']
 
 const fileInputRef = ref(null)
-const isDragging = ref(false)
+const dragCounter = ref(0)
 const errorMessage = ref('')
+
+const isDragging = computed(() => dragCounter.value > 0)
 
 const formattedFileSize = computed(() => {
   if (!props.photoFile?.size) return ''
   const sizeInMb = props.photoFile.size / (1024 * 1024)
   return `${sizeInMb.toFixed(2)} MB`
+})
+
+// ============================================================================
+// Global Window Drop Guard (Prevents browser from opening image in a new tab)
+// ============================================================================
+function preventWindowDrop(event) {
+  event.preventDefault()
+}
+
+onMounted(() => {
+  window.addEventListener('dragover', preventWindowDrop)
+  window.addEventListener('drop', preventWindowDrop)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('dragover', preventWindowDrop)
+  window.removeEventListener('drop', preventWindowDrop)
 })
 
 // ============================================================================
@@ -51,20 +70,38 @@ function handleInputChange(event) {
   event.target.value = ''
 }
 
-function handleDragOver() {
-  isDragging.value = true
+function handleDragEnter() {
+  dragCounter.value++
+}
+
+function handleDragOver(event) {
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
 }
 
 function handleDragLeave() {
-  isDragging.value = false
+  dragCounter.value = Math.max(0, dragCounter.value - 1)
 }
 
 function handleDrop(event) {
-  isDragging.value = false
-  const file = event.dataTransfer?.files?.[0]
-  if (file) {
-    validateAndEmit(file)
+  dragCounter.value = 0
+
+  let file = event.dataTransfer?.files?.[0] || null
+
+  // Fallback for browsers that expose dropped files via DataTransferItemList
+  if (!file && event.dataTransfer?.items?.length) {
+    const fileItem = Array.from(event.dataTransfer.items).find((item) => item.kind === 'file')
+    file = fileItem?.getAsFile() || null
   }
+
+  if (!file) {
+    errorMessage.value =
+      'No file could be read from this drag source. Please use "Select photo" or drag the file directly from your local file manager.'
+    return
+  }
+
+  validateAndEmit(file)
 }
 
 function validateAndEmit(file) {
@@ -75,7 +112,8 @@ function validateAndEmit(file) {
   const hasValidMime = ALLOWED_MIME_TYPES.includes(file.type)
 
   if (!hasValidMime && !hasValidExtension) {
-    errorMessage.value = 'Invalid file format. For this prototype, please upload an original JPG or JPEG photo.'
+    errorMessage.value =
+      'Invalid file format. For this prototype, please upload an original JPG or JPEG photo.'
     return
   }
 
@@ -94,7 +132,8 @@ function handleRemovePhoto() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[680px]">
+  <!-- Equal-height wrapper matching ExamplePreview height -->
+  <div class="flex h-full w-full flex-col">
     <!-- Hidden Native File Input -->
     <input
       ref="fileInputRef"
@@ -109,12 +148,12 @@ function handleRemovePhoto() {
          ====================================================================== -->
     <div
       v-if="!photoPreviewUrl"
-      class="rounded-2xl border-2 border-dashed bg-white px-8 py-10 transition-colors"
-      :class="
+        class="flex flex-1 flex-col justify-center rounded-2xl border-2 border-dashed bg-white px-5 py-8 transition-colors sm:px-8 sm:py-10"      :class="
         isDragging
           ? 'border-[#14532D] bg-[#9FD3B0]/15'
           : 'border-slate-300 hover:border-slate-400'
       "
+      @dragenter.prevent="handleDragEnter"
       @dragover.prevent="handleDragOver"
       @dragleave.prevent="handleDragLeave"
       @drop.prevent="handleDrop"
@@ -153,7 +192,7 @@ function handleRemovePhoto() {
         </button>
       </div>
 
-      <!-- Validation Error Alert (Only shown on invalid file type or size) -->
+      <!-- Validation Error Alert -->
       <div
         v-if="errorMessage"
         role="alert"
@@ -185,52 +224,54 @@ function handleRemovePhoto() {
          ====================================================================== -->
     <div
       v-else
-      class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+      class="flex flex-1 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
     >
-      <!-- Image Preview Container -->
-      <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-        <img
-          :src="photoPreviewUrl"
-          :alt="photoFile?.name || 'Uploaded landscape preview'"
-          class="mx-auto max-h-[340px] w-full object-contain"
-        />
-      </div>
-
-      <!-- File Info & Remove Action -->
-      <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
-        <div class="min-w-0">
-          <p class="truncate text-sm font-semibold text-slate-900">
-            {{ photoFile?.name }}
-          </p>
-          <p class="text-xs text-slate-500">
-            {{ formattedFileSize }} · Original EXIF metadata preserved
-          </p>
+      <div>
+        <!-- Image Preview Container -->
+        <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <img
+            :src="photoPreviewUrl"
+            :alt="photoFile?.name || 'Uploaded landscape preview'"
+            class="mx-auto max-h-[340px] w-full object-contain"
+          />
         </div>
 
-        <button
-          type="button"
-          class="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
-          @click="handleRemovePhoto"
-        >
-          Remove photo
-        </button>
+        <!-- File Info & Remove Action -->
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold text-slate-900">
+              {{ photoFile?.name }}
+            </p>
+            <p class="text-xs text-slate-500">
+              {{ formattedFileSize }} · Original EXIF metadata preserved
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+            @click="handleRemovePhoto"
+          >
+            Remove photo
+          </button>
+        </div>
       </div>
 
       <!-- Card Footer Actions -->
       <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
         <button
-          type="button"
-          class="rounded-xl border border-[#9FD3B0] bg-white px-4 py-2.5 text-sm font-medium text-slate-800 transition hover:bg-[#9FD3B0]/15"
-          @click="$emit('open-tips')"
-        >
-          Which photos are suitable?
+        type="button"
+        class="w-full rounded-xl border border-[#9FD3B0] bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-800 transition hover:bg-[#9FD3B0]/15 sm:w-auto"
+        @click="$emit('open-tips')"
+>
+        Which photos are suitable?
         </button>
 
         <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-xl bg-[#14532D] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#14532D]/90"
-          @click="$emit('next-step')"
-        >
+        type="button"
+        class="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#14532D] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#14532D]/90 sm:w-auto"
+        @click="$emit('next-step')"
+>
           <span>Next: Place turbines</span>
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 10h12m-4-4l4 4-4 4" />
