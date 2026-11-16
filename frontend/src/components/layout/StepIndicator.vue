@@ -15,10 +15,10 @@ const steps = [
 
 <template>
   <nav aria-label="Progress" class="border-b border-slate-200 bg-slate-50">
-    <ol class="mx-auto grid max-w-6xl grid-cols-3 gap-4 px-6 py-6">
+    <ol class="mx-auto grid max-w-6xl grid-cols-3 gap-4 px-4 py-4">
       <li v-for="step in steps" :key="step.number" class="flex min-w-0 items-center gap-3">
         <span
-          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-semibold text-white"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-base font-semibold text-white"
           :class="currentStep === step.number ? 'bg-[#14532D]' : 'bg-[#9FD3B0]'"
         >
           {{ step.number }}
