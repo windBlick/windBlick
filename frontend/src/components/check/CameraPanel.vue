@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import AppIcon from '../AppIcon.vue'
+import PhotoTipsModal from '../tips/PhotoTipsModal.vue'
 import type { CameraField, CameraOverrideForm, ExifHints } from '../../types'
 import { CAMERA_FIELD_PATHS } from '../../stores/session'
 
@@ -26,6 +27,7 @@ function approxHorizontalFov(f35: number, size: { width: number; height: number 
   return (2 * Math.atan(horizontalMm / (2 * f35)) * 180) / Math.PI
 }
 const emit = defineEmits<{ update: [field: CameraField, value: number | null]; loadSample: [] }>()
+const showTips = ref(false)
 
 interface FieldDef {
   key: CameraField
@@ -112,7 +114,7 @@ function onInput(key: CameraField, e: Event) {
     </span>
     <span v-else class="badge badge-warning"><AppIcon name="warning" :size="13" /> No location data in photo</span>
 
-    <p class="panel__intro">Empty fields are taken from the photo where possible. Values you enter replace the photo’s values.</p>
+    <p class="panel__intro">Empty fields are taken from the photo where possible. Values you enter replace the photo’s values. <button type="button" class="link" aria-haspopup="dialog" @click="showTips = true">Which values should I use?</button></p>
 
     <div class="grid">
       <label v-for="f in fields" :key="f.key" class="field" :title="f.help">
@@ -143,6 +145,7 @@ function onInput(key: CameraField, e: Event) {
     <ul v-if="notes.length" class="notes">
       <li v-for="n in notes" :key="n"><AppIcon name="info" :size="14" /> {{ n }}</li>
     </ul>
+    <PhotoTipsModal v-if="showTips" initial-tab="values" @close="showTips = false" />
   </section>
 </template>
 

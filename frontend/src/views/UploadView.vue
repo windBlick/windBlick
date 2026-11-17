@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
+import PhotoTipsModal from '../components/tips/PhotoTipsModal.vue'
 import { useSessionStore } from '../stores/session'
 
 const session = useSessionStore()
@@ -94,16 +95,9 @@ async function useSample() {
           <p>JPG or PNG, up to 20 MB</p>
         </div>
 
-        <button type="button" class="btn btn-outline" :aria-expanded="showHelp" @click="showHelp = !showHelp">
+        <button type="button" class="btn btn-outline" aria-haspopup="dialog" @click="showHelp = true">
           Which photos are suitable?
         </button>
-        <Transition name="expand">
-          <ul v-if="showHelp" class="drop__help">
-            <li>Taken with a smartphone camera, with location services turned on</li>
-            <li>The original file — not a screenshot, and not sent via WhatsApp or social media (they remove location data)</li>
-            <li>Landscape orientation, held level, looking towards the planned site</li>
-          </ul>
-        </Transition>
 
         <button type="button" class="drop__sample" @click="useSample">No photo at hand? Try a sample photo</button>
       </div>
@@ -123,6 +117,7 @@ async function useSample() {
 
     <p class="privacy">Location data is used to determine where the photo was taken.</p>
     <a class="privacy__link" href="#" @click.prevent>Data processing</a>
+    <PhotoTipsModal v-if="showHelp" @close="showHelp = false" />
   </section>
 </template>
 
@@ -175,16 +170,6 @@ async function useSample() {
   text-align: left;
   font-size: 16px;
   line-height: 2;
-  color: var(--ink-700);
-}
-.drop__help {
-  margin: 16px 0 0;
-  padding: 16px 16px 16px 32px;
-  border-radius: var(--radius);
-  background: var(--surface-muted);
-  text-align: left;
-  font-size: 14px;
-  line-height: 1.6;
   color: var(--ink-700);
 }
 .drop__sample {
@@ -289,15 +274,6 @@ async function useSample() {
   display: inline-block;
   margin-top: 16px;
   font-size: 16px;
-}
-.expand-enter-active,
-.expand-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
-}
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
 }
 @media (max-width: 900px) {
   .layout {
