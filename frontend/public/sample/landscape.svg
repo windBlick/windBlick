@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fc3df"/>
+      <stop offset="0.55" stop-color="#d7e6ef"/>
+      <stop offset="1" stop-color="#eef1ea"/>
+    </linearGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fa79a"/>
+      <stop offset="1" stop-color="#a9bba9"/>
+    </linearGradient>
+    <linearGradient id="field" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fae5c"/>
+      <stop offset="1" stop-color="#5f8f3a"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6c9a3f"/>
+      <stop offset="1" stop-color="#3f6e28"/>
+    </linearGradient>
+    <radialGradient id="tree" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#5f8f3f"/>
+      <stop offset="1" stop-color="#2c5420"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <g fill="#ffffff" opacity="0.7">
+    <ellipse cx="260" cy="150" rx="140" ry="26"/>
+    <ellipse cx="340" cy="135" rx="90" ry="22"/>
+    <ellipse cx="1180" cy="210" rx="170" ry="24"/>
+    <ellipse cx="1270" cy="195" rx="100" ry="20"/>
+  </g>
+  <path d="M0 520 C180 470 320 488 470 500 C640 512 760 470 920 482 C1100 496 1260 470 1600 500 L1600 600 L0 600 Z" fill="url(#far)"/>
+  <path d="M0 548 C260 530 520 546 800 540 C1080 534 1340 548 1600 540 L1600 1000 L0 1000 Z" fill="url(#field)"/>
+  <g fill="#7f9f50" opacity="0.6">
+    <path d="M0 600 L1600 580 L1600 600 L0 625 Z"/>
+    <path d="M0 680 L1600 640 L1600 660 L0 710 Z"/>
+  </g>
+  <g fill="#2f5a25">
+    <ellipse cx="120" cy="548" rx="70" ry="22"/>
+    <ellipse cx="380" cy="545" rx="90" ry="20"/>
+    <ellipse cx="610" cy="550" rx="60" ry="16"/>
+    <ellipse cx="1010" cy="544" rx="110" ry="20"/>
+    <ellipse cx="1350" cy="548" rx="80" ry="18"/>
+  </g>
+  <g fill="#e9e2d2">
+    <rect x="1180" y="528" width="34" height="20"/>
+    <path d="M1176 530 L1197 514 L1218 530 Z" fill="#a4553f"/>
+    <rect x="1230" y="532" width="26" height="16"/>
+    <path d="M1227 534 L1243 522 L1259 534 Z" fill="#a4553f"/>
+  </g>
+  <path d="M640 1000 C700 860 760 760 820 700 C860 660 900 630 960 610 L990 614 C930 640 890 680 860 720 C810 790 780 880 760 1000 Z" fill="#c9b994" opacity="0.85"/>
+  <path d="M0 760 C200 720 400 740 560 790 L560 1000 L0 1000 Z" fill="url(#near)"/>
+  <path d="M1100 1000 C1180 860 1320 800 1600 770 L1600 1000 Z" fill="url(#near)"/>
+  <g fill="url(#tree)">
+    <circle cx="70" cy="700" r="90"/>
+    <circle cx="190" cy="740" r="80"/>
+    <circle cx="40" cy="820" r="110"/>
+    <circle cx="300" cy="820" r="70"/>
+    <circle cx="1500" cy="700" r="100"/>
+    <circle cx="1400" cy="760" r="80"/>
+    <circle cx="1560" cy="830" r="110"/>
+    <circle cx="1290" cy="860" r="60"/>
+  </g>
+  <g fill="#ffffff" opacity="0.9">
+    <circle cx="420" cy="930" r="3"/><circle cx="460" cy="950" r="3"/><circle cx="500" cy="920" r="3"/>
+    <circle cx="1180" cy="940" r="3"/><circle cx="1220" cy="960" r="3"/>
+  </g>
+</svg>
