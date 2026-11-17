@@ -88,7 +88,11 @@ export async function mockCreateVisualization(
 
   /* ---- camera resolution: explicit override, then supported EXIF ---- */
   const exif = await exifr
-    .parse(image, { gps: true, pick: ['latitude', 'longitude', 'GPSImgDirection', 'GPSImgDirectionRef'] })
+    .parse(image, {
+      gps: true,
+      // exifr derives latitude/longitude from the raw GPS tags, so those must be picked too
+      pick: ['GPSLatitude', 'GPSLatitudeRef', 'GPSLongitude', 'GPSLongitudeRef', 'GPSImgDirection', 'GPSImgDirectionRef'],
+    })
     .catch(() => null)
 
   const override = (v: number | undefined, path: string): ResolvedValue | null =>

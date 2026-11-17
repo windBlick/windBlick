@@ -76,6 +76,7 @@ async function generate() {
           :overrides="session.overrides"
           :exif="session.exif"
           :field-errors="session.fieldErrors"
+          :photo-size="session.photo"
           @update="session.setOverride"
           @load-sample="loadSample"
         />

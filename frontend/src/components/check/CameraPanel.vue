@@ -12,7 +12,19 @@ const props = defineProps<{
   overrides: CameraOverrideForm
   exif: ExifHints | null
   fieldErrors: Record<string, string>
+  /** Displayed (upright) photo size, to turn the 35 mm-equivalent focal length into a horizontal FOV. */
+  photoSize: { width: number; height: number } | null
 }>()
+
+/**
+ * Approximate horizontal FOV from a 35 mm-equivalent focal length. The
+ * equivalence is defined on the 43.27 mm full-frame diagonal, so the photo's
+ * own aspect ratio and orientation decide the horizontal extent.
+ */
+function approxHorizontalFov(f35: number, size: { width: number; height: number }): number {
+  const horizontalMm = (43.27 * size.width) / Math.hypot(size.width, size.height)
+  return (2 * Math.atan(horizontalMm / (2 * f35)) * 180) / Math.PI
+}
 const emit = defineEmits<{ update: [field: CameraField, value: number | null]; loadSample: [] }>()
 
 interface FieldDef {
@@ -65,8 +77,9 @@ const notes = computed(() => {
   if (e?.gpsAltitudeM !== null && e?.gpsAltitudeM !== undefined) {
     list.push(`The photo's GPS altitude is ${Math.round(e.gpsAltitudeM)} m, but its height reference is unknown — check before entering it.`)
   }
-  if (e?.focalLength35mm) {
-    list.push(`35 mm-equivalent focal length ${e.focalLength35mm} mm (≈ ${Math.round((2 * Math.atan(36 / (2 * e.focalLength35mm)) * 180) / Math.PI)}° if uncropped).`)
+  if (e?.focalLength35mm && props.photoSize) {
+    const fov = Math.round(approxHorizontalFov(e.focalLength35mm, props.photoSize))
+    list.push(`35 mm-equivalent focal length ${e.focalLength35mm} mm → horizontal field of view ≈ ${fov}° for this photo (if not cropped).`)
   }
   return list
 })

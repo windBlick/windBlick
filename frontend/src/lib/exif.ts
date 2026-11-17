@@ -11,7 +11,17 @@ export async function readExifHints(file: File): Promise<ExifHints> {
   try {
     const data = await exifr.parse(file, {
       gps: true,
-      pick: ['latitude', 'longitude', 'GPSImgDirection', 'GPSImgDirectionRef', 'GPSAltitude', 'FocalLengthIn35mmFormat'],
+      // exifr derives latitude/longitude from the raw GPS tags, so those must be picked too
+      pick: [
+        'GPSLatitude',
+        'GPSLatitudeRef',
+        'GPSLongitude',
+        'GPSLongitudeRef',
+        'GPSImgDirection',
+        'GPSImgDirectionRef',
+        'GPSAltitude',
+        'FocalLengthIn35mmFormat',
+      ],
     })
     if (!data) return empty
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
