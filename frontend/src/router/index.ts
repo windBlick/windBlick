@@ -32,7 +32,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   const session = useSessionStore()
   if (to.meta.needsPhoto && !session.hasPhoto) return { name: 'upload' }
-  if (to.name === 'preview' && !session.canGenerate) return { name: 'check' }
+  if (to.name === 'preview' && !session.result) return { name: 'check' }
 })
 
 export default router

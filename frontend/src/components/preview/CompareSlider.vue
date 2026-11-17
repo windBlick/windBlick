@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import AppIcon from '../AppIcon.vue'
-import OutlineOverlay from './OutlineOverlay.vue'
-import type { PhotoInfo, TurbineOutline } from '../../types'
 
-defineProps<{ photo: PhotoInfo; outlines: TurbineOutline[] }>()
+/**
+ * Before/after comparison: the original photo on the left, the backend-rendered
+ * image on the right. Both are shown upright (the browser and the backend each
+ * apply the EXIF orientation once), so they line up pixel for pixel.
+ */
+defineProps<{ originalUrl: string; renderedUrl: string; width: number; height: number }>()
 
 const pos = ref(50)
 const frame = ref<HTMLDivElement | null>(null)
@@ -40,17 +43,18 @@ function onKey(e: KeyboardEvent) {
   <div
     ref="frame"
     class="frame"
-    :style="{ '--pos': `${pos}%`, aspectRatio: `${photo.width} / ${photo.height}` }"
+    :style="{
+      '--pos': `${pos}%`,
+      aspectRatio: `${width} / ${height}`,
+      width: `min(100%, calc(75vh * ${width} / ${height}))`,
+    }"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
     @pointercancel="onUp"
   >
-    <img class="photo" :src="photo.url" alt="Your original photo" draggable="false" />
-    <div class="after">
-      <img class="photo" :src="photo.url" alt="" draggable="false" />
-      <OutlineOverlay :width="photo.width" :height="photo.height" :outlines="outlines" />
-    </div>
+    <img class="photo" :src="originalUrl" alt="Your original photo" draggable="false" />
+    <img class="photo after" :src="renderedUrl" alt="Photo with calculated turbine outlines" draggable="false" />
 
     <span class="tag tag--l">Original</span>
     <span class="tag tag--r">Simulated view</span>
@@ -74,8 +78,7 @@ function onKey(e: KeyboardEvent) {
 <style scoped>
 .frame {
   position: relative;
-  width: 100%;
-  max-height: 70vh;
+  margin-inline: auto;
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: ew-resize;
@@ -88,12 +91,10 @@ function onKey(e: KeyboardEvent) {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 .after {
-  position: absolute;
-  inset: 0;
   clip-path: inset(0 0 0 var(--pos));
 }
 .tag {

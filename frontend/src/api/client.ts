@@ -1,50 +1,69 @@
-/**
- * Minimal HTTP client. All backend calls go through here so the base URL,
- * auth headers and error format live in one place once the contract is known.
- *
- * Configure in .env.local:
- *   VITE_API_BASE_URL=https://api.example.org/v1
- *   VITE_USE_MOCKS=false
- */
+import type { ProblemDetails } from '../types/contract'
 
-export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '/api'
+/**
+ * HTTP plumbing shared by all API modules.
+ *
+ * In development, Vite proxies /api to the backend (see vite.config.ts), so
+ * requests stay same-origin. Set VITE_API_BASE_URL only when the frontend is
+ * served from a different origin than the API.
+ */
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? ''
 export const USE_MOCKS: boolean = (import.meta.env.VITE_USE_MOCKS ?? 'true') !== 'false'
 
-export class ApiError extends Error {
-  readonly status: number
-  readonly code?: string
+/** An RFC 9457 problem returned by the API (or synthesised for transport failures). */
+export class ApiProblem extends Error {
+  readonly problem: ProblemDetails
 
-  constructor(status: number, message: string, code?: string) {
-    super(message)
-    this.status = status
-    this.code = code
+  constructor(problem: ProblemDetails) {
+    super(problem.detail || problem.title)
+    this.problem = problem
+  }
+
+  get code(): string {
+    return this.problem.code
+  }
+
+  get status(): number {
+    return this.problem.status
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
+function syntheticProblem(status: number, code: string, detail: string): ApiProblem {
+  return new ApiProblem({ type: 'about:blank', title: code, status, detail, request_id: '', code, errors: [] })
+}
+
+/** POST multipart form data and parse a JSON or problem+json response. */
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      // Let the browser set the multipart boundary; only declare what we accept.
+      headers: { Accept: 'application/json, application/problem+json' },
+      body: form,
+    })
+  } catch {
+    throw syntheticProblem(0, 'NETWORK_ERROR', 'The server could not be reached. Check your connection and try again.')
+  }
+
+  let body: unknown
+  try {
+    body = await res.json()
+  } catch {
+    throw syntheticProblem(res.status, 'INVALID_RESPONSE', `Unexpected response from the server (HTTP ${res.status}).`)
+  }
+
   if (!res.ok) {
-    // TODO: adapt to the backend's error format from the API contract
-    let message = res.statusText
-    let code: string | undefined
-    try {
-      const body = await res.json()
-      message = body.message ?? message
-      code = body.code
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(res.status, message, code)
+    const p = body as Partial<ProblemDetails>
+    throw new ApiProblem({
+      type: p.type ?? 'about:blank',
+      title: p.title ?? res.statusText,
+      status: p.status ?? res.status,
+      detail: p.detail ?? res.statusText,
+      request_id: p.request_id ?? '',
+      code: p.code ?? 'UNKNOWN_ERROR',
+      errors: Array.isArray(p.errors) ? p.errors : [],
+    })
   }
-  return res.json() as Promise<T>
+  return body as T
 }
-
-/** Simulated latency for mocks so loading states are visible. */
-export const mockDelay = (ms = 400) => new Promise((r) => setTimeout(r, ms))

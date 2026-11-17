@@ -1,140 +1,211 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { CameraPose, PhotoInfo, PlannedTurbine, PreviewResponse, LatLon } from '../types'
-import { loadImageSize, readPhotoMetadata } from '../lib/exif'
-import { destination } from '../lib/geo'
-import { generatePreview } from '../api/preview'
+import type {
+  CameraField,
+  CameraOverrideForm,
+  ExifHints,
+  FieldProvenance,
+  PhotoInfo,
+  Turbine,
+  VisualizationParameters,
+  VisualizationResponse,
+} from '../types'
+import { API_VERSION } from '../types/contract'
+import { loadImageSize, readExifHints } from '../lib/exif'
+import { createVisualization } from '../api/visualizations'
+import { ApiProblem } from '../api/client'
+import { SAMPLE_CAMERA, loadSamplePhoto, sampleTurbines } from '../lib/sample'
 
-export const DEFAULT_HUB_HEIGHT = 160
-export const DEFAULT_ROTOR_DIAMETER = 130
-export const CAMERA_HEIGHT = 1.6
-const DEFAULT_CAMERA: CameraPose = { lat: 51.0603, lon: 6.2187, azimuth: 142, pitch: 2, fov: 65 }
+const EMPTY_OVERRIDES: CameraOverrideForm = {
+  latitude: null,
+  longitude: null,
+  elevationM: null,
+  headingDeg: null,
+  pitchDeg: null,
+  rollDeg: null,
+  horizontalFovDeg: null,
+}
+
+/** JSON Pointer in the request parameters for each form field (contract §4). */
+export const CAMERA_FIELD_PATHS: Record<CameraField, string> = {
+  latitude: '/camera/position/latitude_deg',
+  longitude: '/camera/position/longitude_deg',
+  elevationM: '/camera/position/elevation/value_m',
+  headingDeg: '/camera/orientation/heading_deg',
+  pitchDeg: '/camera/orientation/pitch_deg',
+  rollDeg: '/camera/orientation/roll_deg',
+  horizontalFovDeg: '/camera/intrinsics/horizontal_fov_deg',
+}
+
+/** Build the contract's `parameters` part: only explicitly set camera values are sent. */
+export function buildParameters(
+  overrides: CameraOverrideForm,
+  turbines: Turbine[],
+  overrideSource: FieldProvenance['source'],
+): VisualizationParameters {
+  const o = overrides
+  const params: VisualizationParameters = { api_version: API_VERSION, turbines, reference_points: [] }
+  const camera: NonNullable<VisualizationParameters['camera']> = {}
+  const provenance: Record<string, FieldProvenance> = {}
+
+  if (o.latitude !== null || o.longitude !== null || o.elevationM !== null) {
+    camera.position = {}
+    if (o.longitude !== null) camera.position.longitude_deg = o.longitude
+    if (o.latitude !== null) camera.position.latitude_deg = o.latitude
+    if (o.elevationM !== null) {
+      camera.position.elevation = {
+        value_m: o.elevationM,
+        datum: 'DHHN2016_NHN',
+        source: overrideSource === 'fixture' ? 'fixture' : 'user_input',
+      }
+    }
+  }
+  if (o.headingDeg !== null || o.pitchDeg !== null || o.rollDeg !== null) {
+    camera.orientation = { north_reference: 'true' }
+    if (o.headingDeg !== null) camera.orientation.heading_deg = o.headingDeg
+    if (o.pitchDeg !== null) camera.orientation.pitch_deg = o.pitchDeg
+    if (o.rollDeg !== null) camera.orientation.roll_deg = o.rollDeg
+  }
+  if (o.horizontalFovDeg !== null) {
+    camera.intrinsics = { kind: 'horizontal_fov', horizontal_fov_deg: o.horizontalFovDeg }
+  }
+  for (const [field, path] of Object.entries(CAMERA_FIELD_PATHS) as [CameraField, string][]) {
+    if (o[field] !== null) provenance[path] = { source: overrideSource }
+  }
+
+  if (Object.keys(camera).length) params.camera = camera
+  if (Object.keys(provenance).length) params.provenance = provenance
+  return params
+}
 
 /** Everything the user does across the three steps. */
 export const useSessionStore = defineStore('session', () => {
   const photo = ref<PhotoInfo | null>(null)
-  const camera = ref<CameraPose>({ ...DEFAULT_CAMERA })
-  const gpsDetected = ref(false)
-  const compassDetected = ref(false)
-  const turbines = ref<PlannedTurbine[]>([])
-  const preview = ref<PreviewResponse | null>(null)
-  const previewLoading = ref(false)
-  const previewError = ref<string | null>(null)
-  let nextId = 1
+  const exif = ref<ExifHints | null>(null)
+  const overrides = ref<CameraOverrideForm>({ ...EMPTY_OVERRIDES })
+  /** Whether the current override values come from the demo fixture or the user. */
+  const overrideSource = ref<'user_input' | 'fixture'>('user_input')
+  const turbines = ref<Turbine[]>([])
+
+  const result = ref<VisualizationResponse | null>(null)
+  const loading = ref(false)
+  const problem = ref<ApiProblem | null>(null)
 
   const hasPhoto = computed(() => photo.value !== null)
   const canGenerate = computed(() => hasPhoto.value && turbines.value.length > 0)
 
-  function setPhotoUrl(url: string) {
-    if (photo.value?.file && photo.value.url !== url) URL.revokeObjectURL(photo.value.url)
-    return url
+  /** Messages from the last error response, keyed by JSON Pointer. */
+  const fieldErrors = computed<Record<string, string>>(() => {
+    const out: Record<string, string> = {}
+    for (const e of problem.value?.problem.errors ?? []) if (e.path) out[e.path] ??= e.message
+    return out
+  })
+
+  /** Effective values for drawing the map (override, else EXIF hint). Not sent to the API. */
+  const mapCamera = computed(() => {
+    const o = overrides.value
+    const hintPos = exif.value?.position
+    const hintHeading = exif.value?.heading?.reference === 'true' ? exif.value.heading.value : null
+    return {
+      lat: o.latitude ?? hintPos?.lat ?? null,
+      lon: o.longitude ?? hintPos?.lon ?? null,
+      headingDeg: o.headingDeg ?? hintHeading,
+      fovDeg: o.horizontalFovDeg,
+    }
+  })
+
+  function invalidate() {
+    result.value = null
+    problem.value = null
+  }
+
+  async function setPhoto(file: File, hints: ExifHints) {
+    if (photo.value) URL.revokeObjectURL(photo.value.url)
+    const url = URL.createObjectURL(file)
+    const size = await loadImageSize(url)
+    photo.value = { file, url, name: file.name, ...size }
+    exif.value = hints
   }
 
   async function loadPhoto(file: File) {
-    const url = setPhotoUrl(URL.createObjectURL(file))
-    const [size, meta] = await Promise.all([loadImageSize(url), readPhotoMetadata(file)])
-    photo.value = { file, url, name: file.name, ...size }
-    gpsDetected.value = meta.gps !== null
-    compassDetected.value = meta.azimuth !== null
-    camera.value = {
-      ...DEFAULT_CAMERA,
-      ...(meta.gps ?? {}),
-      azimuth: meta.azimuth ?? DEFAULT_CAMERA.azimuth,
-      fov: meta.fov ? Math.round(meta.fov) : DEFAULT_CAMERA.fov,
-      pitch: 0,
-    }
+    await setPhoto(file, await readExifHints(file))
+    overrides.value = { ...EMPTY_OVERRIDES }
+    overrideSource.value = 'user_input'
     turbines.value = []
-    preview.value = null
+    invalidate()
   }
 
-  /** Bundled sample photo + camera + two turbines, for demos without a real JPG. */
+  /** Demo: bundled photo + fixture camera values + two fixture turbines. */
   async function loadSample() {
-    const url = setPhotoUrl('/sample/landscape.svg')
-    const size = await loadImageSize(url)
-    photo.value = { file: null, url, name: 'sample-landscape.jpg', ...size }
-    gpsDetected.value = true
-    compassDetected.value = true
-    camera.value = { ...DEFAULT_CAMERA }
-    turbines.value = []
-    nextId = 1
-    addTurbine(destination(DEFAULT_CAMERA, 128, 950))
-    addTurbine(destination(DEFAULT_CAMERA, 151, 1350))
-    preview.value = null
+    await setPhoto(await loadSamplePhoto(), { position: null, heading: null, gpsAltitudeM: null, focalLength35mm: null })
+    overrides.value = { ...SAMPLE_CAMERA }
+    overrideSource.value = 'fixture'
+    turbines.value = sampleTurbines()
+    invalidate()
   }
 
-  function addTurbine(pos: LatLon) {
-    const n = nextId++
-    turbines.value.push({
-      id: `wt-${n}`,
-      label: `WT ${String(n).padStart(2, '0')}`,
-      lat: pos.lat,
-      lon: pos.lon,
-      hubHeight: DEFAULT_HUB_HEIGHT,
-      rotorDiameter: DEFAULT_ROTOR_DIAMETER,
-    })
-    preview.value = null
+  function setOverride(field: CameraField, value: number | null) {
+    overrides.value = { ...overrides.value, [field]: value }
+    overrideSource.value = 'user_input'
+    invalidate()
   }
 
-  function updateTurbine(id: string, patch: Partial<Omit<PlannedTurbine, 'id'>>) {
-    const t = turbines.value.find((x) => x.id === id)
-    if (t) Object.assign(t, patch)
-    preview.value = null
+  function toggleTurbine(t: Turbine) {
+    const i = turbines.value.findIndex((x) => x.id === t.id)
+    if (i >= 0) turbines.value.splice(i, 1)
+    else if (turbines.value.length < 100) turbines.value.push(t)
+    invalidate()
   }
 
   function removeTurbine(id: string) {
     turbines.value = turbines.value.filter((t) => t.id !== id)
-    preview.value = null
+    invalidate()
   }
 
-  function updateCamera(patch: Partial<CameraPose>) {
-    camera.value = { ...camera.value, ...patch }
-    preview.value = null
-  }
-
-  async function runPreview() {
-    if (!photo.value) return
-    previewLoading.value = true
-    previewError.value = null
+  async function generate(): Promise<boolean> {
+    if (!photo.value || !turbines.value.length) return false
+    loading.value = true
+    problem.value = null
     try {
-      preview.value = await generatePreview({
-        image: { width: photo.value.width, height: photo.value.height },
-        camera: camera.value,
-        cameraHeight: CAMERA_HEIGHT,
-        turbines: turbines.value,
-      })
+      const params = buildParameters(overrides.value, turbines.value, overrideSource.value)
+      result.value = await createVisualization(photo.value.file, params)
+      return true
     } catch (e) {
-      previewError.value = e instanceof Error ? e.message : 'Preview could not be generated.'
+      problem.value =
+        e instanceof ApiProblem
+          ? e
+          : new ApiProblem({
+              type: 'about:blank',
+              title: 'Error',
+              status: 0,
+              detail: e instanceof Error ? e.message : 'The preview could not be generated.',
+              request_id: '',
+              code: 'CLIENT_ERROR',
+              errors: [],
+            })
+      return false
     } finally {
-      previewLoading.value = false
+      loading.value = false
     }
-  }
-
-  function reset() {
-    if (photo.value?.file) URL.revokeObjectURL(photo.value.url)
-    photo.value = null
-    turbines.value = []
-    preview.value = null
-    nextId = 1
   }
 
   return {
     photo,
-    camera,
-    gpsDetected,
-    compassDetected,
+    exif,
+    overrides,
     turbines,
-    preview,
-    previewLoading,
-    previewError,
+    result,
+    loading,
+    problem,
     hasPhoto,
     canGenerate,
+    fieldErrors,
+    mapCamera,
     loadPhoto,
     loadSample,
-    addTurbine,
-    updateTurbine,
+    setOverride,
+    toggleTurbine,
     removeTurbine,
-    updateCamera,
-    runPreview,
-    reset,
+    generate,
   }
 })

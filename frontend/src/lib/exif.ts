@@ -1,45 +1,39 @@
 import exifr from 'exifr'
-import type { PhotoMetadata } from '../types'
+import type { ExifHints } from '../types'
 
 /**
- * Read GPS position, compass direction and field of view from a JPG.
- * Runs entirely in the browser — the photo is not uploaded for this step.
+ * Read a few EXIF values in the browser to *preview* what the photo contains
+ * (badge text, placeholders, map centre). These hints are never sent as
+ * overrides — the backend resolves EXIF itself (docs/api-contract.md §1).
  */
-export async function readPhotoMetadata(file: File): Promise<PhotoMetadata> {
+export async function readExifHints(file: File): Promise<ExifHints> {
+  const empty: ExifHints = { position: null, heading: null, gpsAltitudeM: null, focalLength35mm: null }
   try {
     const data = await exifr.parse(file, {
       gps: true,
-      pick: [
-        'latitude',
-        'longitude',
-        'GPSLatitude',
-        'GPSLongitude',
-        'GPSLatitudeRef',
-        'GPSLongitudeRef',
-        'GPSImgDirection',
-        'FocalLengthIn35mmFormat',
-      ],
+      pick: ['latitude', 'longitude', 'GPSImgDirection', 'GPSImgDirectionRef', 'GPSAltitude', 'FocalLengthIn35mmFormat'],
     })
-    if (!data) return { gps: null, azimuth: null, fov: null }
-
-    const gps =
-      typeof data.latitude === 'number' && typeof data.longitude === 'number'
-        ? { lat: data.latitude, lon: data.longitude }
-        : null
-
-    const azimuth = typeof data.GPSImgDirection === 'number' ? data.GPSImgDirection % 360 : null
-
-    // Horizontal FOV from 35 mm-equivalent focal length (36 mm wide sensor)
-    const f35 = data.FocalLengthIn35mmFormat
-    const fov = typeof f35 === 'number' && f35 > 0 ? (2 * Math.atan(36 / (2 * f35)) * 180) / Math.PI : null
-
-    return { gps, azimuth, fov }
-  } catch {
-    return { gps: null, azimuth: null, fov: null }
+    if (!data) return empty
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+    const lat = num(data.latitude)
+    const lon = num(data.longitude)
+    const dir = num(data.GPSImgDirection)
+    return {
+      position: lat !== null && lon !== null ? { lat, lon } : null,
+      heading:
+        dir !== null
+          ? { value: dir, reference: data.GPSImgDirectionRef === 'T' ? 'true' : data.GPSImgDirectionRef === 'M' ? 'magnetic' : 'unknown' }
+          : null,
+      gpsAltitudeM: num(data.GPSAltitude),
+      focalLength35mm: num(data.FocalLengthIn35mmFormat),
+    }
+  } catch (err) {
+    console.warn('Could not read EXIF hints', err)
+    return empty
   }
 }
 
-/** Natural pixel size of an image URL. */
+/** Natural pixel size of an image URL, as the browser displays it. */
 export function loadImageSize(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image()

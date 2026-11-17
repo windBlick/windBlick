@@ -1,54 +1,60 @@
 <script setup lang="ts">
 import AppIcon from '../AppIcon.vue'
-import type { CameraPose, PlannedTurbine } from '../../types'
+import type { Turbine } from '../../types'
 import { distance } from '../../lib/geo'
 
-defineProps<{ turbines: PlannedTurbine[]; camera: CameraPose }>()
-const emit = defineEmits<{
-  update: [id: string, patch: Partial<PlannedTurbine>]
-  remove: [id: string]
+/**
+ * Selected turbines. Dimensions are read-only: they come from the WFS record
+ * and are submitted unchanged (contract §4).
+ */
+const props = defineProps<{
+  turbines: Turbine[]
+  camera: { lat: number | null; lon: number | null }
+  fieldErrors: Record<string, string>
 }>()
+const emit = defineEmits<{ remove: [id: string] }>()
 
-function commit(id: string, key: 'hubHeight' | 'rotorDiameter', e: Event) {
-  const v = Number((e.target as HTMLInputElement).value)
-  if (Number.isFinite(v) && v > 0) emit('update', id, { [key]: Math.min(400, v) })
+const away = (t: Turbine) => {
+  if (props.camera.lat === null || props.camera.lon === null) return null
+  const m = distance({ lat: props.camera.lat, lon: props.camera.lon }, { lat: t.position.latitude_deg, lon: t.position.longitude_deg })
+  return m >= 1000 ? `${(m / 1000).toFixed(2)} km away` : `${Math.round(m)} m away`
 }
 
-const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`)
+const errorsFor = (i: number) =>
+  Object.entries(props.fieldErrors)
+    .filter(([path]) => path.startsWith(`/turbines/${i}/`) || path === `/turbines/${i}`)
+    .map(([, msg]) => msg)
 </script>
 
 <template>
   <section class="card panel">
     <h2>Wind Turbines ({{ turbines.length }})</h2>
 
-    <p v-if="!turbines.length" class="empty">No turbines yet. Click on the map to place the first one.</p>
+    <p v-if="!turbines.length" class="empty">
+      No turbines selected yet. Click a turbine marker on the map to add it.
+      <span v-if="fieldErrors['/turbines']" class="field-error">{{ fieldErrors['/turbines'] }}</span>
+    </p>
 
     <TransitionGroup name="list" tag="ul" class="list">
-      <li v-for="t in turbines" :key="t.id" class="item">
+      <li v-for="(t, i) in turbines" :key="t.id" class="item">
         <div class="item__head">
-          <span class="item__label">{{ t.label }}</span>
-          <span class="item__dist">{{ km(distance(camera, t)) }} away</span>
-          <button type="button" class="item__del" :aria-label="`Remove ${t.label}`" @click="emit('remove', t.id)">
+          <span class="item__label">{{ t.name ?? `Turbine ${i + 1}` }}</span>
+          <span class="status" :class="`status--${t.status}`">{{ t.status === 'operating' ? 'Operating' : 'Approved' }}</span>
+          <button type="button" class="item__del" :aria-label="`Remove ${t.name ?? `Turbine ${i + 1}`}`" @click="emit('remove', t.id)">
             <AppIcon name="trash" :size="16" />
           </button>
         </div>
-        <div class="item__fields">
-          <label>
-            <span class="field-label">Hub height (m)</span>
-            <input class="input" type="number" min="1" max="400" :value="t.hubHeight" @change="commit(t.id, 'hubHeight', $event)" />
-          </label>
-          <label>
-            <span class="field-label">Rotor diameter (m)</span>
-            <input
-              class="input"
-              type="number"
-              min="1"
-              max="400"
-              :value="t.rotorDiameter"
-              @change="commit(t.id, 'rotorDiameter', $event)"
-            />
-          </label>
-        </div>
+        <dl class="item__facts">
+          <div><dt>Hub height</dt><dd>{{ t.hub_height_m }} m</dd></div>
+          <div><dt>Rotor diameter</dt><dd>{{ t.rotor_diameter_m }} m</dd></div>
+          <div><dt>Total height</dt><dd>{{ t.hub_height_m + t.rotor_diameter_m / 2 }} m</dd></div>
+        </dl>
+        <p class="item__meta">
+          <span v-if="t.turbine_type">{{ t.turbine_type }} · </span>
+          <span v-if="away(t)">{{ away(t) }} · </span>
+          <span>Source: NRW register</span>
+        </p>
+        <p v-for="msg in errorsFor(i)" :key="msg" class="field-error">{{ msg }}</p>
       </li>
     </TransitionGroup>
   </section>
@@ -65,6 +71,7 @@ const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.r
 }
 .empty {
   font-size: 14px;
+  line-height: 1.5;
   color: var(--ink-500);
   padding: 16px;
   border: 1px dashed var(--border-strong);
@@ -89,16 +96,23 @@ const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.r
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .item__label {
   font-size: 13px;
   font-weight: 600;
   color: var(--green-900);
 }
-.item__dist {
-  font-size: 12px;
-  color: var(--ink-500);
+.status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #5f6b66;
+  font-size: 11px;
+  font-weight: 500;
+  color: #3f4844;
+}
+.status--approved {
+  border-style: dashed;
 }
 .item__del {
   margin-left: auto;
@@ -116,10 +130,37 @@ const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.r
   background: #fde8e6;
   color: var(--danger);
 }
-.item__fields {
+.item__facts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.item__facts div {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.item__facts dt {
+  font-size: 11px;
+  color: var(--ink-500);
+}
+.item__facts dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.item__meta {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-500);
+}
+.field-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--danger);
 }
 .list-enter-active,
 .list-leave-active {

@@ -13,13 +13,19 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const showHelp = ref(false)
 
-const ACCEPTED = ['image/jpeg']
+// Accepted by POST /api/v0/visualizations (docs/api-contract.md §2)
+const ACCEPTED = ['image/jpeg', 'image/png']
+const MAX_BYTES = 20 * 1024 * 1024
 
 async function handleFile(file: File | undefined) {
   if (!file) return
   error.value = null
-  if (!ACCEPTED.includes(file.type) && !/\.jpe?g$/i.test(file.name)) {
-    error.value = 'Please choose a JPG or JPEG file.'
+  if (!ACCEPTED.includes(file.type)) {
+    error.value = 'Please choose a JPG or PNG file.'
+    return
+  }
+  if (file.size > MAX_BYTES) {
+    error.value = 'This photo is larger than 20 MB. Please choose a smaller file.'
     return
   }
   loading.value = true
@@ -77,7 +83,7 @@ async function useSample() {
           ref="fileInput"
           class="visually-hidden"
           type="file"
-          accept=".jpg,.jpeg,image/jpeg"
+          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
           @change="onPick"
         />
 
@@ -85,7 +91,7 @@ async function useSample() {
 
         <div class="drop__hints">
           <p>Use the original file with saved location data.</p>
-          <p>For this prototype: JPG or JPEG</p>
+          <p>JPG or PNG, up to 20 MB</p>
         </div>
 
         <button type="button" class="btn btn-outline" :aria-expanded="showHelp" @click="showHelp = !showHelp">
