@@ -7,7 +7,7 @@ Run the development server from ``backend/`` with::
 
 from fastapi import FastAPI
 
-from wind_turbine_visualization.api.routes import health
+from wind_turbine_visualization.api.routes import health, visualizations
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(visualizations.router)
 
     return app
 
