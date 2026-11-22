@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import AppIcon from '../AppIcon.vue'
-import TurbineGlyph from '../TurbineGlyph.vue'
 </script>
 
 <template>
   <div class="ill" aria-hidden="true">
-    <img src="/sample/landscape.svg" alt="" />
+    <img src="/sample/example_preview_intro_original.JPG" alt="" />
     <div class="ill__after">
-      <img src="/sample/landscape.svg" alt="" />
-      <div class="ill__t ill__t--1"><TurbineGlyph :height="120" /><span>WT 01</span></div>
-      <div class="ill__t ill__t--2"><TurbineGlyph :height="95" /><span>WT 02</span></div>
+      <img src="/sample/example_preview_intro_edited.png" alt="" />
     </div>
     <span class="ill__tag ill__tag--l">Original</span>
-    <span class="ill__tag ill__tag--r">With outlines</span>
+    <span class="ill__tag ill__tag--r">Edited preview</span>
     <div class="ill__handle"><AppIcon name="chevrons" :size="16" /></div>
   </div>
 </template>
@@ -21,8 +18,8 @@ import TurbineGlyph from '../TurbineGlyph.vue'
 .ill {
   --pos: 50%;
   position: relative;
-  width: 100%;
-  aspect-ratio: 560 / 218;
+  width: min(100%, 460px);
+  aspect-ratio: 1160 / 768;
   border-radius: var(--radius-lg);
   overflow: hidden;
   animation: sweep 5s ease-in-out infinite;
@@ -39,21 +36,6 @@ import TurbineGlyph from '../TurbineGlyph.vue'
   inset: 0;
   clip-path: inset(0 0 0 var(--pos));
 }
-.ill__t {
-  position: absolute;
-  bottom: 14%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.ill__t--1 {
-  left: 62%;
-}
-.ill__t--2 {
-  left: 80%;
-  bottom: 12%;
-}
-.ill__t span,
 .ill__tag {
   padding: 3px 7px;
   border-radius: 4px;
