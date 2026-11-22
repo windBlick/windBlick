@@ -9,6 +9,7 @@ const session = useSessionStore()
 const router = useRouter()
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const previewDialog = ref<HTMLDialogElement | null>(null)
 const dragging = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -105,10 +106,33 @@ async function useSample() {
       <aside class="card example">
         <h2 class="example__title">Example of a geometric preview</h2>
         <div class="example__img">
-          <img src="/sample/landscape.svg" alt="Sample landscape with two turbine markers" />
-          <span class="pin pin--1"><span class="pin__head">i</span><span class="pin__label">WT 01</span></span>
-          <span class="pin pin--2"><span class="pin__head">i</span><span class="pin__label">WT 02</span></span>
+          <button
+            type="button"
+            class="example__preview"
+            aria-label="View the geometric preview full size"
+            aria-haspopup="dialog"
+            @click="previewDialog?.showModal()"
+          >
+            <img src="/sample/example_preview.png" alt="" />
+            <span class="example__zoom" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="m15.5 15.5 5 5" />
+              </svg>
+            </span>
+          </button>
         </div>
+        <dialog
+          ref="previewDialog"
+          class="preview-dialog"
+          aria-label="Full-size geometric wind turbine preview"
+          @click.self="previewDialog?.close()"
+        >
+          <button type="button" class="preview-dialog__close" aria-label="Close preview" @click="previewDialog?.close()">
+            <AppIcon name="close" :size="20" />
+          </button>
+          <img src="/sample/example_preview.png" alt="Full-size geometric wind turbine preview" />
+        </dialog>
         <p class="example__note">
           Not a photorealistic visualization. Buildings and trees may obstruct the actual view.
         </p>
@@ -124,7 +148,7 @@ async function useSample() {
 <style scoped>
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 352px;
+  grid-template-columns: minmax(0, 1fr) minmax(352px, 440px);
   gap: 24px;
   margin-top: 28px;
 }
@@ -183,7 +207,6 @@ async function useSample() {
 }
 .example {
   padding: 24px;
-  align-self: start;
 }
 .example__title {
   font-size: 20px;
@@ -197,67 +220,102 @@ async function useSample() {
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.example__img img {
+.example__preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.example__preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.18s ease;
 }
-.pin {
+.example__preview::after {
   position: absolute;
-  bottom: 14%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.pin::before {
+  inset: 0;
   content: '';
-  order: 1;
-  width: 4px;
-  height: 64px;
-  background: #fff;
-  border: 1px solid var(--ink-700);
+  background: rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
-.pin__head {
-  order: 0;
+.example__preview:hover img {
+  transform: scale(1.04);
+}
+.example__preview:hover::after,
+.example__preview:focus-visible::after {
+  opacity: 1;
+}
+.example__preview:focus-visible {
+  outline: 3px solid var(--green-600);
+  outline-offset: -3px;
+}
+.example__zoom {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  border: 2px solid var(--ink-700);
-  background: rgba(255, 255, 255, 0.85);
-  font-weight: 700;
-  font-size: 14px;
-}
-.pin__label {
-  order: 2;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: #fff;
-  font-size: 15px;
-  font-weight: 600;
-}
-.pin--1 {
-  left: 18%;
-}
-.pin--2 {
-  left: 48%;
-  bottom: 10%;
-}
-.pin--2 .pin__head {
-  width: 46px;
-  height: 46px;
-  border-color: var(--info-blue);
-  color: var(--info-blue);
-}
-.pin--2::before {
-  height: 74px;
-  border-color: var(--info-blue);
-}
-.pin--2 .pin__label {
-  background: var(--info-blue);
+  background: var(--green-900);
   color: #fff;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+.example__preview:hover .example__zoom,
+.example__preview:focus-visible .example__zoom {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.preview-dialog {
+  position: fixed;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  margin: auto;
+  padding: 16px;
+  overflow: visible;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+.preview-dialog::backdrop {
+  background: rgba(17, 24, 39, 0.78);
+}
+.preview-dialog > img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 64px);
+  object-fit: contain;
+}
+.preview-dialog__close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-900);
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
 }
 .example__note {
   margin-top: 24px;
