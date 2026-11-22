@@ -139,8 +139,11 @@ onBeforeUnmount(() => {
 .modal {
   position: relative;
   width: min(640px, 100%);
+  height: min(600px, calc(100vh - 32px));
   max-height: calc(100vh - 32px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal);
@@ -169,8 +172,10 @@ onBeforeUnmount(() => {
   color: var(--ink-900);
 }
 .modal__body {
+  flex: 1;
+  min-height: 0;
   padding: 48px 40px 24px;
-  overflow: hidden;
+  overflow-y: auto;
 }
 .slide {
   text-align: center;
@@ -213,6 +218,7 @@ onBeforeUnmount(() => {
   color: var(--green-900);
 }
 .modal__footer {
+  flex: none;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
