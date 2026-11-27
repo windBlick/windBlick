@@ -1,13 +1,17 @@
 """HTTP-level tests for the image upload endpoint.
 
 Exercises the multipart upload, orientation normalization, and the
-contract error mapping (415 / 422) through the FastAPI app. Images are
+contract error mapping (413 / 415 / 422) through the FastAPI app. Images are
 generated in memory so no private photos or EXIF are committed.
 """
 
 from io import BytesIO
 
+import pytest
 from PIL import Image
+
+from wind_turbine_visualization.api.routes import visualizations
+from wind_turbine_visualization.image import normalization
 
 EXIF_ORIENTATION_TAG = 274  # standard EXIF Orientation tag id
 
@@ -72,11 +76,96 @@ def test_upload_undecodable_bytes_returns_422(client):
     """Bytes that are not a real image are rejected with 422."""
     response = client.post(
         "/api/v0/visualizations",
-        files={"image": ("photo.png", b"not an image", "image/png")},
+        files={"image": ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")},
     )
 
     assert response.status_code == 422
     assert response.json()["code"] == "INVALID_IMAGE"
+
+
+@pytest.mark.parametrize("actual_format", ["JPEG", "TIFF"])
+def test_upload_checks_actual_format(client, actual_format):
+    """A valid raster sent as the wrong type is rejected."""
+    buffer = BytesIO()
+    Image.new("RGB", (3, 2)).save(buffer, format=actual_format)
+    response = client.post(
+        "/api/v0/visualizations",
+        files={"image": ("photo.png", buffer.getvalue(), "image/png")},
+    )
+    assert response.status_code == 415
+    assert response.json()["code"] == "UNSUPPORTED_IMAGE_TYPE"
+
+
+def test_upload_rejects_animated_png(client):
+    """APNG is not a supported still image."""
+    buffer = BytesIO()
+    first = Image.new("RGB", (3, 2), "red")
+    second = Image.new("RGB", (3, 2), "blue")
+    first.save(buffer, format="PNG", save_all=True, append_images=[second])
+    response = client.post(
+        "/api/v0/visualizations",
+        files={"image": ("photo.png", buffer.getvalue(), "image/png")},
+    )
+    assert response.status_code == 415
+    assert response.json()["code"] == "UNSUPPORTED_IMAGE_TYPE"
+
+
+def test_upload_rejects_invalid_orientation(client):
+    """An undefined EXIF orientation yields a client error."""
+    response = client.post(
+        "/api/v0/visualizations",
+        files={
+            "image": ("photo.jpg", _jpeg_bytes_with_orientation(4, 2, 9), "image/jpeg")
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_IMAGE"
+
+
+def test_upload_image_byte_limit(client, monkeypatch):
+    """A file at the limit is accepted and one byte over is rejected."""
+    data = _png_bytes(3, 2)
+    monkeypatch.setattr(visualizations, "MAX_IMAGE_BYTES", len(data))
+    accepted = client.post(
+        "/api/v0/visualizations", files={"image": ("photo.png", data, "image/png")}
+    )
+    rejected = client.post(
+        "/api/v0/visualizations",
+        files={"image": ("photo.png", data + b"0", "image/png")},
+    )
+    assert accepted.status_code == 200
+    assert rejected.status_code == 413
+    assert rejected.json()["code"] == "IMAGE_TOO_LARGE"
+
+
+def test_upload_request_limit_counts_body_before_parsing(client, monkeypatch):
+    """Reject the entire multipart body even without a length header."""
+    monkeypatch.setattr(visualizations, "MAX_REQUEST_BYTES", 32)
+    response = client.post(
+        "/api/v0/visualizations",
+        headers={"Content-Type": "multipart/form-data; boundary=upload"},
+        content=iter(
+            [b"--upload\r\n", b'Content-Disposition: form-data; name="image"\r\n']
+        ),
+    )
+    assert "content-length" not in response.request.headers
+    assert response.status_code == 413
+    assert response.json()["code"] == "REQUEST_TOO_LARGE"
+
+
+@pytest.mark.parametrize("pillow_limit", [False, True])
+def test_upload_pixel_limit(client, monkeypatch, pillow_limit):
+    """The project's and Pillow's pixel limits both return 413."""
+    if pillow_limit:
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 2)
+    else:
+        monkeypatch.setattr(normalization, "MAX_DECODED_PIXELS", 5)
+    response = client.post(
+        "/api/v0/visualizations",
+        files={"image": ("photo.png", _png_bytes(3, 2), "image/png")},
+    )
+    assert response.status_code == 413
+    assert response.json()["code"] == "PIXEL_LIMIT_EXCEEDED"
 
 
 def test_missing_image_part_is_rejected(client):

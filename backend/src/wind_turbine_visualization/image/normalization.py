@@ -7,11 +7,18 @@ so it is deterministic and unit-testable.
 from dataclasses import dataclass
 from io import BytesIO
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import ExifTags, Image, ImageOps
 
-from wind_turbine_visualization.image.errors import InvalidImage, UnsupportedImageType
+from wind_turbine_visualization.image.errors import (
+    InvalidImage,
+    PixelLimitExceeded,
+    UnsupportedImageType,
+)
 
-SUPPORTED_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
+SUPPORTED_FORMATS = {
+    "image/jpeg": ("JPEG", b"\xff\xd8"),
+    "image/png": ("PNG", b"\x89PNG\r\n\x1a\n"),
+}
 MAX_DECODED_PIXELS = 24_000_000  # contract draft resource limit
 
 
@@ -35,19 +42,30 @@ def load_normalized_image(data: bytes, declared_mime_type: str) -> NormalizedIma
         The orientation-normalized image and its width/height in pixels.
 
     Raises:
-        UnsupportedImageType: declared_mime_type is not JPEG or PNG.
-        InvalidImage: bytes cannot be decoded or exceed the pixel limit.
+        UnsupportedImageType: format is unsupported or disagrees with the media type.
+        PixelLimitExceeded: the image exceeds the pixel limit.
+        InvalidImage: bytes cannot be decoded or orientation is invalid.
     """
-    if declared_mime_type not in SUPPORTED_MIME_TYPES:
-        raise UnsupportedImageType(declared_mime_type)
+    format_spec = SUPPORTED_FORMATS.get(declared_mime_type)
+    if format_spec is None or not data.startswith(format_spec[1]):
+        raise UnsupportedImageType()
+    format_name, _ = format_spec
+
     try:
-        with Image.open(BytesIO(data)) as raw:
-            raw.verify()  # cheap structural check
-        with Image.open(BytesIO(data)) as reopened:
-            if reopened.width * reopened.height > MAX_DECODED_PIXELS:
-                raise InvalidImage("decoded pixel count exceeds limit")
-            upright = ImageOps.exif_transpose(reopened)  # swaps W/H if rotated 90/270
-            upright.load()
-    except (UnidentifiedImageError, OSError) as exc:
-        raise InvalidImage("image bytes could not be decoded") from exc
+        # The JPEG decoder also accepts the primary raster in JPEG/MPO photos.
+        with Image.open(BytesIO(data), formats=(format_name,)) as raw:
+            if raw.width * raw.height > MAX_DECODED_PIXELS:
+                raise PixelLimitExceeded("Image exceeds the decoded pixel limit.")
+            if raw.get_format_mimetype() == "image/apng":
+                raise UnsupportedImageType()
+            raw.verify()
+        with Image.open(BytesIO(data), formats=(format_name,)) as reopened:
+            orientation = reopened.getexif().get(ExifTags.Base.Orientation, 1)
+            if type(orientation) is not int or not 1 <= orientation <= 8:
+                raise InvalidImage("Invalid EXIF image orientation.")
+            upright = ImageOps.exif_transpose(reopened)
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise PixelLimitExceeded("Image exceeds the decoded pixel limit.") from exc
+    except (OSError, SyntaxError, ValueError) as exc:
+        raise InvalidImage("Image bytes could not be decoded.") from exc
     return NormalizedImage(upright, upright.width, upright.height)
