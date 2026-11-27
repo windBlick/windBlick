@@ -24,7 +24,7 @@ from wind_turbine_visualization.image import (
     load_normalized_image,
 )
 
-MAX_IMAGE_BYTES = 20 * 1024 * 1024 # 20 MiB image
+MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MiB image
 MAX_REQUEST_BYTES = 22 * 1024 * 1024  # 20 MiB image, 1 MiB JSON and multipart overhead
 
 
