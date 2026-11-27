@@ -36,7 +36,7 @@ class TurbineGeometry:
             and not the total turbine height.
 
     Raises:
-        InvalidTurbineGeometry: If a dimension is not positive and finite.
+        InvalidTurbineGeometry: If a dimension is outside (0, 500) meters.
     """
 
     hub_height_meters: float
@@ -47,7 +47,7 @@ class TurbineGeometry:
             ("hub_height_meters", self.hub_height_meters),
             ("rotor_diameter_meters", self.rotor_diameter_meters),
         ):
-            if not math.isfinite(value) or value <= 0:
+            if not 0 < value < 500:
                 raise InvalidTurbineGeometry(field, value)
 
     @property
@@ -89,12 +89,17 @@ class TurbineGeometry:
 
         Args:
             rotor_facing_azimuth_degrees: Compass direction the rotor plane
-                faces (its normal), in degrees clockwise from north. The
-                default faces north, so the blades lie in the x-z plane.
+                faces (its normal), in degrees clockwise from north, in
+                [0, 360). The default is north, with blades in the x-z plane.
 
         Returns:
             One ``(hub, tip)`` segment per blade, in local-frame meters.
+
+        Raises:
+            ValueError: If the facing azimuth is outside [0, 360).
         """
+        if not 0 <= rotor_facing_azimuth_degrees < 360:
+            raise ValueError("rotor_facing_azimuth_degrees must be in [0, 360)")
         azimuth_radians = math.radians(rotor_facing_azimuth_degrees)
         # Horizontal in-plane direction: the rotor normal turned 90 degrees.
         in_plane_east = math.cos(azimuth_radians)

@@ -55,7 +55,9 @@ def test_blades_facing_east_lie_in_y_z_plane():
     assert tips[1][1] == pytest.approx(-60.0 * HALF_SQRT3, abs=TOLERANCE)
 
 
-@pytest.mark.parametrize("azimuth_degrees", [0.0, 37.0, 90.0, 215.0])
+@pytest.mark.parametrize(
+    "azimuth_degrees", [0.0, 37.0, 90.0, 215.0, math.nextafter(360.0, 0.0)]
+)
 def test_every_blade_has_rotor_radius_length(azimuth_degrees):
     """Blade length equals the rotor radius for any facing direction."""
     turbine = TurbineGeometry(hub_height_meters=80.0, rotor_diameter_meters=100.0)
@@ -64,10 +66,21 @@ def test_every_blade_has_rotor_radius_length(azimuth_degrees):
         assert math.dist(hub, tip) == pytest.approx(50.0, abs=TOLERANCE)
 
 
-@pytest.mark.parametrize("bad_value", [0.0, -1.0, math.nan, math.inf])
+@pytest.mark.parametrize(
+    "azimuth_degrees", [-0.1, 360.0, 360.1, math.nan, math.inf, -math.inf]
+)
+def test_azimuth_outside_allowed_range_is_rejected(azimuth_degrees):
+    """Reject angles outside the compass range and non-finite angles."""
+    turbine = TurbineGeometry(hub_height_meters=100.0, rotor_diameter_meters=120.0)
+
+    with pytest.raises(ValueError, match="rotor_facing_azimuth_degrees"):
+        turbine.blade_segments(azimuth_degrees)
+
+
+@pytest.mark.parametrize("bad_value", [0.0, -1.0, 500.0, 500.1, math.nan, math.inf])
 @pytest.mark.parametrize("field", ["hub_height_meters", "rotor_diameter_meters"])
-def test_nonpositive_or_nonfinite_dimension_is_rejected(field, bad_value):
-    """Zero, negative, NaN, and infinite dimensions raise with the field name."""
+def test_dimension_outside_allowed_range_is_rejected(field, bad_value):
+    """Out-of-range and non-finite dimensions raise with the field name."""
     dimensions = {"hub_height_meters": 100.0, "rotor_diameter_meters": 120.0}
     dimensions[field] = bad_value
 
@@ -76,3 +89,15 @@ def test_nonpositive_or_nonfinite_dimension_is_rejected(field, bad_value):
 
     assert error.value.field == field
     assert error.value.code == "VALIDATION_ERROR"
+    assert "less than 500 m" in str(error.value)
+
+
+def test_dimensions_just_below_500_m_are_accepted():
+    """Both dimensions can reach the largest float below the upper bound."""
+    dimension = math.nextafter(500.0, 0.0)
+    turbine = TurbineGeometry(
+        hub_height_meters=dimension, rotor_diameter_meters=dimension
+    )
+
+    assert turbine.hub_height_meters == dimension
+    assert turbine.rotor_diameter_meters == dimension
