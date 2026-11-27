@@ -45,12 +45,12 @@ Send `multipart/form-data` with exactly these two parts:
 
 | Part | Required | Content type | Contents |
 | --- | --- | --- | --- |
-| `image` | Yes | `image/jpeg` or `image/png` | One non-animated original raster image, preserving available EXIF; binary bytes, not base64. The backend normalizes orientation. |
+| `image` | Yes | `image/jpeg` or `image/png` | One non-animated original raster image, preserving available EXIF; binary bytes, not base64. The declared media type must match the bytes. For a JPEG with an auxiliary MPO frame, use the primary raster. The backend normalizes orientation. |
 | `parameters` | Yes | `application/json` | UTF-8 JSON object described below. |
 
 Reject duplicate/missing parts and additional image files. In a browser, let `FormData` generate the multipart boundary; do not set the outer `Content-Type` manually. Successful responses use `application/json`; errors use `application/problem+json`.
 
-Proposed initial limits for team review: 20 MiB image file, 24 million decoded pixels, 1 MiB JSON part, 100 turbines, and 40 MiB encoded output PNG before base64. These are resource limits, not a single-turbine product design. Enforce limits before expensive work where possible; do not truncate arrays. Revisit the values with representative photos before implementation. No jobs, persistent photo store, or result-download endpoint are introduced in v0.1.
+Proposed initial limits for team review: 22 MiB total request body (including multipart overhead), 20 MiB image file, 24 million decoded pixels, 1 MiB JSON part, 100 turbines, and 40 MiB encoded output PNG before base64. These are resource limits, not a single-turbine product design. Enforce limits before expensive work where possible; do not truncate arrays. Revisit the values with representative photos before implementation. No jobs, persistent photo store, or result-download endpoint are introduced in v0.1.
 
 ## 3. Shared types and general rules
 
@@ -281,8 +281,8 @@ Use [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html). Eac
 | HTTP status | Application codes / examples |
 | --- | --- |
 | 400 | `INVALID_MULTIPART`, `INVALID_JSON`, `DUPLICATE_PART`. |
-| 413 | `IMAGE_TOO_LARGE`, `PIXEL_LIMIT_EXCEEDED`, `PARAMETERS_TOO_LARGE`, `TURBINE_LIMIT_EXCEEDED`. |
-| 415 | `UNSUPPORTED_IMAGE_TYPE` or wrong request/part media type. |
+| 413 | `REQUEST_TOO_LARGE`, `IMAGE_TOO_LARGE`, `PIXEL_LIMIT_EXCEEDED`, `PARAMETERS_TOO_LARGE`, `TURBINE_LIMIT_EXCEEDED`. |
+| 415 | `UNSUPPORTED_IMAGE_TYPE` for an unsupported image signature, mismatched image media type, or animated PNG. A file with a matching JPEG/PNG signature that fails decoding returns `INVALID_IMAGE`. |
 | 422 | `VALIDATION_ERROR` (including missing/unsupported turbine status, unsupported source layer, or a status/layer mismatch), `CAMERA_PARAMETERS_UNRESOLVED`, `INVALID_IMAGE`, `IMAGE_DIMENSION_MISMATCH`, `IMAGE_NOT_NORMALIZED`, `UNSUPPORTED_VERTICAL_DATUM`, `UNSUPPORTED_API_VERSION`, `FEATURE_NOT_SUPPORTED`. |
 | 500 | `INTERNAL_ERROR` for unexpected backend failures; no traceback or payload echo. |
 | 503 | `RENDER_CAPACITY_EXCEEDED` or `OUTPUT_LIMIT_EXCEEDED`; explain retry/reduction without exposing internals. |
