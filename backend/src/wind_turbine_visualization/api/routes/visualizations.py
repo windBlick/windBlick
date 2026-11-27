@@ -10,18 +10,22 @@ Only this layer imports FastAPI. All decoding logic lives in the
 framework-free ``wind_turbine_visualization.image`` package.
 """
 
-from fastapi import APIRouter, UploadFile
-from fastapi.responses import JSONResponse
+from collections.abc import Awaitable, Callable
+
+from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
+from starlette.types import Message
 
 from wind_turbine_visualization.image import (
     InvalidImage,
+    PixelLimitExceeded,
     UnsupportedImageType,
     load_normalized_image,
 )
 
-router = APIRouter(prefix="/api/v0", tags=["visualizations"])
-
-MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MiB, contract draft resource limit
+MAX_IMAGE_BYTES = 20 * 1024 * 1024 # 20 MiB image
+MAX_REQUEST_BYTES = 22 * 1024 * 1024  # 20 MiB image, 1 MiB JSON and multipart overhead
 
 
 def _problem(status_code: int, code: str, detail: str) -> JSONResponse:
@@ -49,8 +53,46 @@ def _problem(status_code: int, code: str, detail: str) -> JSONResponse:
     )
 
 
+class RequestTooLarge(HTTPException):
+    """Abort multipart parsing when the request body exceeds its limit."""
+
+
+class LimitedUploadRoute(APIRoute):
+    """Limit the request stream before FastAPI parses the multipart body."""
+
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        """Wrap the generated handler with a byte limit for its body stream."""
+        handler = super().get_route_handler()
+
+        async def limited_handler(request: Request) -> Response:
+            received_bytes = 0
+
+            async def receive() -> Message:
+                nonlocal received_bytes
+                message = await request.receive()
+                if message["type"] == "http.request":
+                    received_bytes += len(message.get("body", b""))
+                    if received_bytes > MAX_REQUEST_BYTES:
+                        raise RequestTooLarge(status_code=413)
+                return message
+
+            try:
+                return await handler(Request(request.scope, receive))
+            except RequestTooLarge:
+                return _problem(
+                    413, "REQUEST_TOO_LARGE", "Request body exceeds the 22 MiB limit."
+                )
+
+        return limited_handler
+
+
+router = APIRouter(
+    prefix="/api/v0", tags=["visualizations"], route_class=LimitedUploadRoute
+)
+
+
 @router.post("/visualizations")
-async def create_visualization(image: UploadFile) -> JSONResponse:
+def create_visualization(image: UploadFile) -> JSONResponse:
     """Accept an uploaded image and return its normalized dimensions.
 
     Args:
@@ -61,7 +103,11 @@ async def create_visualization(image: UploadFile) -> JSONResponse:
         problem response: ``413`` if too large, ``415`` for an unsupported
         media type, ``422`` if the bytes cannot be decoded.
     """
-    data = await image.read()
+    if image.size is not None and image.size > MAX_IMAGE_BYTES:
+        return _problem(
+            413, "IMAGE_TOO_LARGE", "Image exceeds the 20 MiB upload limit."
+        )
+    data = image.file.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
         return _problem(
             413, "IMAGE_TOO_LARGE", "Image exceeds the 20 MiB upload limit."
@@ -70,6 +116,8 @@ async def create_visualization(image: UploadFile) -> JSONResponse:
         result = load_normalized_image(data, image.content_type or "")
     except UnsupportedImageType as exc:
         return _problem(415, exc.code, str(exc))
+    except PixelLimitExceeded as exc:
+        return _problem(413, exc.code, str(exc))
     except InvalidImage as exc:
         return _problem(422, exc.code, str(exc))
     return JSONResponse(

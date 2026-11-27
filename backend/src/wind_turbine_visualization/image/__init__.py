@@ -3,6 +3,7 @@
 from wind_turbine_visualization.image.errors import (
     ImageError,
     InvalidImage,
+    PixelLimitExceeded,
     UnsupportedImageType,
 )
 from wind_turbine_visualization.image.normalization import (
@@ -13,6 +14,7 @@ from wind_turbine_visualization.image.normalization import (
 __all__ = [
     "ImageError",
     "InvalidImage",
+    "PixelLimitExceeded",
     "UnsupportedImageType",
     "NormalizedImage",
     "load_normalized_image",
