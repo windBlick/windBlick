@@ -18,7 +18,7 @@ Status is carried for neutral interpretation and possible status-based rendering
 ### Camera resolution: explicit value, then EXIF
 
 1. Validate every supplied camera field, including nested values. An invalid override returns `422 VALIDATION_ERROR`; do not fall back to EXIF to hide the error. Omission means fallback; `null`, empty strings, and nonfinite numbers are invalid. Zero is an explicit value.
-2. Read supported EXIF and normalize usable values to the contract's units, coordinate frames, and image orientation. Use a maintained metadata/image library, not a custom binary EXIF parser. Unsupported, ambiguous, or malformed camera tags are unavailable values, not guessed measurements.
+2. Read supported EXIF and normalize usable values to their documented units, coordinate frames, and image orientation. Resolve the camera's horizontal position using the rules in Section 4. Use a maintained metadata/image library, not a custom binary EXIF parser. Unsupported, ambiguous, or malformed camera tags are unavailable values, not guessed measurements.
 3. Merge at individual field level: supplied values win. Omitting `camera`, sending `{}`, or omitting a nested object supplies no overrides for that object. For example, supplying only `camera.orientation.heading_deg` leaves pitch and roll eligible for EXIF fallback. No previous request, browser sensor, device database, terrain service, or numeric default supplies missing camera measurements.
 4. Validate the resolved camera before projection. Rendering still needs a complete position, orientation, and usable intrinsics. If EXIF cannot fill an omitted value, return `422 CAMERA_PARAMETERS_UNRESOLVED` with all unresolved field paths and actionable reasons. Optional request fields do not make the underlying geometry optional.
 5. Return `camera_used` and `camera_value_sources` on success. Explicit overrides are never silently replaced by EXIF or calibration. No automatic calibration is enabled in v0.1.
@@ -29,7 +29,7 @@ Coordinate/frame labels are contract conventions, not estimated measurements: ex
 
 | Target | Backend rule |
 | --- | --- |
-| Longitude / latitude | Decode EXIF GPS coordinates and hemisphere references, validate the declared horizontal datum, and convert to WGS84 if supported. An absent/ambiguous datum needs a documented supported interpretation; otherwise report the coordinate as unresolved. |
+| Longitude / latitude | Decode GPS coordinates and hemisphere references. Resolve the source datum and convert to WGS84 when needed for geographic overrides, then use EPSG:25832 for the effective position. Treat an ambiguous datum as unresolved unless a supported interpretation is documented. |
 | Heading | Accept a supported image-direction field only with a known north reference and camera-axis meaning. Magnetic direction requires a documented conversion; without one, request an explicit true-north override. Travel direction is not viewing direction. |
 | Pitch / roll | Accept only supported tags with documented axes/signs and a tested conversion to the normalized image frame. EXIF image orientation is not a measurement of pitch or roll. Missing values never default to zero. Device-specific tag support remains an implementation decision to document with fixtures. |
 | Camera elevation | Resolve only when the source height reference and conversion to DHHN2016 NHN are known. A generic GPS altitude must not be assumed to have this datum. If conversion is unavailable, request an explicit elevation value. No DSM/terrain lookup is introduced. |
@@ -59,14 +59,17 @@ Proposed initial limits for team review: 22 MiB total request body (including mu
 | `Id` | Nonempty string, at most 128 characters; unique within its request collection. |
 | `Number` | Finite JSON number. Numeric strings, `NaN`, and infinity are invalid. |
 | `Timestamp` | RFC 3339 date-time with explicit UTC offset, preferably `Z`. |
-| `Coordinates` | `{longitude_deg, latitude_deg}` in WGS84 horizontal coordinates; longitude −180…180, latitude −90…90. Named keys avoid positional axis ambiguity. |
+| `ProjectedCoordinates` | `{easting_m, northing_m}` in ETRS89 / UTM zone 32N (EPSG:25832). Both values are metres. Used for turbines, future map points, and the effective camera position. |
+| `CameraGeographicCoordinates` | Camera input only. WGS84 (EPSG:4326) `{longitude_deg, latitude_deg}` in decimal degrees. Longitude −180…180, latitude −90…90. |
 | `Elevation` | `{value_m, datum, source, uncertainty_m?}`. v0.1 uses absolute height above NHN in DHHN2016: `datum: "DHHN2016_NHN"`. `source` is `survey`, `user_input`, `fixture`, or `backend_model` for turbine inputs; camera overrides and resolved camera elevations also allow `exif`. Optional uncertainty is a nonnegative number in metres. |
-| `Position` | `Coordinates` plus required `elevation: Elevation`; used for turbines and the fully resolved camera. |
-| `CameraPositionOverride` | Optional `longitude_deg`, `latitude_deg`, and `elevation` with optional members. Missing measurements use EXIF; supplied values must satisfy the same numeric bounds as `Position`. |
+| `Position` | `ProjectedCoordinates` plus required `elevation: Elevation`; used for turbines and the fully resolved camera. Camera elevation in the response may also have `source: "exif"`. |
+| `CameraPositionOverride` | Optional horizontal camera fields from one coordinate system, plus optional `elevation`. The backend fills omissions from usable EXIF in the same coordinate system before returning an effective EPSG:25832 position. |
 | `PixelPoint` | `{x_px, y_px}`, finite subpixel coordinates in the backend-normalized image. |
 | `FieldProvenance` | `{source, observed_at?, note?}`. Source: `exif`, `device_sensor`, `user_input`, `wfs`, `fixture`, or `derived`. |
 
-Unknown optional values are omitted, not sent as empty strings or `null`. Zero is a real number, never a missing-value marker. Turbine status is required and accepts only `operating` or `approved`. Missing, unknown, and unsupported statuses are validation errors; there is no fallback status. Unexpected fields are rejected in requests to catch spelling mistakes; clients ignore additional response fields. Breaking changes to an adopted contract require a new version. This EXIF/override decision revises the unimplemented v0.1 draft in place; consumers must review the new upload and resolution semantics before implementation. `api_version` must equal `"0.1"`.
+Unknown optional values are omitted, not sent as empty strings or `null`. Zero is a real number, never a missing-value marker. Turbine status is required and accepts only `operating` or `approved`. Missing, unknown, and unsupported statuses are validation errors; there is no fallback status. Unexpected fields are rejected in requests to catch spelling mistakes; clients ignore additional response fields. Breaking changes to an adopted contract require a new version. This coordinate change revises the in-development v0.1 draft. Update clients that send geographic turbine positions or read geographic coordinates from the effective camera position. `api_version` must equal `"0.1"`.
+
+EPSG:25832 is the horizontal CRS for additional spatial input and for backend calculations. Only the camera position input also accepts WGS84 fields. The field names identify the CRS, so no separate CRS field is sent. The [camera conventions](camera-conventions.md#coordinates-and-heights) define the conversion to the camera-relative frame and its alignment with true north.
 
 GPS latitude/longitude does **not** establish camera elevation. The camera's elevation is the optical centre's absolute elevation; a turbine's elevation is its base elevation, not its hub height. All elevations must be in the same datum before subtraction. Browser/GPS ellipsoidal altitude cannot simply be labelled NHN. The resolved camera and explicit turbine elevations must use the agreed datum. Camera elevation may be omitted in the request, but unusable or ambiguous EXIF height requires an explicit override; unsupported explicit datums are rejected. Later backend terrain lookup can supply base elevation and camera height offsets without changing the meaning of these values. The frontend is not required to implement terrain or DSM lookup.
 
@@ -99,7 +102,8 @@ Pixel centres use origin `(0, 0)` at the top-left, x rightwards and y downwards.
 
 | Field | Type | Required | Meaning / validation |
 | --- | --- | --- | --- |
-| `camera.position` | CameraPositionOverride | O | Partial optical-centre position; never replaces turbine positions. |
+| `camera.position` | CameraPositionOverride | O | Partial optical-centre position. Choose EPSG:25832 or WGS84 for its horizontal fields. |
+| `camera.position.easting_m`, `camera.position.northing_m` | Number | O | Easting and northing in metres (EPSG:25832). Each overrides the corresponding projected axis. |
 | `camera.position.longitude_deg` | Number | O | WGS84 longitude, −180…180. Overrides only longitude. |
 | `camera.position.latitude_deg` | Number | O | WGS84 latitude, −90…90. Overrides only latitude. |
 | `camera.position.elevation` | CameraElevationOverride | O | Optional `value_m`, `datum`, `source`, `uncertainty_m`. An explicit `value_m` is in DHHN2016 NHN; omitted `datum` means that contract convention and omitted `source` means `user_input`. With no value override, EXIF height must independently establish its datum; supplied labels cannot relabel it. |
@@ -110,24 +114,13 @@ Pixel centres use origin `(0, 0)` at the top-left, x rightwards and y downwards.
 | `camera.orientation.north_reference` | String literal | O | `"true"`; this convention also applies to explicit headings when omitted. It does not override a magnetic EXIF reference. |
 | `camera.intrinsics` | IntrinsicsOverrides | O | Partial values from one variant below; every member, including `kind`, is optional. |
 
+**Horizontal camera resolution.** Reject a `camera.position` containing both projected and geographic fields with `422 VALIDATION_ERROR`. If the request supplies WGS84 fields, complete any missing axis from usable WGS84 EXIF, then project the resolved pair once to EPSG:25832. If it supplies projected fields, use those values directly. When one projected axis is missing, project a complete usable EXIF GPS pair first and take the missing axis from that result. With no horizontal override, project the complete usable EXIF pair. If an axis is still missing, return `CAMERA_PARAMETERS_UNRESOLVED`. Elevation is resolved independently.
+
 Missing pitch, roll, heading, or elevation in the request is allowed. Missing measurements after EXIF resolution are errors. A user may explicitly assume zero for an angle, with `user_input` provenance and a note; the backend must not make that assumption invisibly. Uncertainty/source metadata for an overridden measurement must not be inherited from the displaced EXIF measurement. A supplied source/uncertainty describes the effective value but does not certify its correctness.
 
 **Device-to-camera conversion:** Browser `alpha/beta/gamma` are device-axis rotations, not contract heading/pitch/roll. A capture adapter must account for the selected front/rear lens, display orientation, mirroring, and image normalization, then convert the resulting optical frame. There is no universally correct `heading = alpha` shortcut. Retain observation timestamps in provenance when available; unavailable true north requires manual orientation. Validate the adapter with known directions/tilts on real devices. This conversion does not move the backend's world-to-image projection into the frontend. See the [W3C orientation model](https://www.w3.org/TR/orientation-event/).
 
-To make the proposed roll convention reproducible, use a local east/north/up frame. After converting degrees to radians:
-
-```text
-forward = (sin(h)*cos(p), cos(h)*cos(p), sin(p))
-right0  = (cos(h), -sin(h), 0)
-down0   = (sin(h)*sin(p), cos(h)*sin(p), -cos(p))
-
-right = cos(r)*right0 + sin(r)*down0
-down  = -sin(r)*right0 + cos(r)*down0
-
-(Xc, Yc, Zc) = (dot(delta, right), dot(delta, down), dot(delta, forward))
-```
-
-Positive roll rotates the camera's right axis towards its zero-roll down axis. Camera axes are x right, y down, z forward. For a level north-facing camera, east projects right and increasing elevation projects up. For a level east-facing camera, south projects right. True north and projected-grid north must not be silently equated; account for grid convergence if using a projected work frame. Final CRS/height transformation implementation is coordinated in [#13](https://github.com/windBlick/windBlick/issues/13).
+See [camera orientation](camera-conventions.md#camera-orientation) for the camera axes, rotation equations and the link between true north and the local world frame.
 
 ### Camera intrinsics: optional overrides within one variant
 
@@ -139,16 +132,9 @@ A physical focal length alone is insufficient to determine image scale. All fiel
 | `physical_focal_length` | `focal_length_mm`, `sensor_width_mm`, `sensor_height_mm`: positive Numbers | O, each field | Actual focal length and effective sensor extent represented by the submitted raster, in its final orientation and crop. |
 | `calibrated` | `fx_px`, `fy_px`: positive Numbers; `cx_px`, `cy_px`: Numbers | O, each field | Intrinsics already expressed for the submitted raster. Principal point must lie within the image in v0.1. |
 
-Do not send fields from multiple variants. With image width W and height H:
+Do not send fields from multiple variants. See [intrinsics and projection](camera-conventions.md#intrinsics-and-projection) for the focal-length conversion, principal point, and pinhole projection. Portrait rotation, crop, resizing, digital zoom, and stabilization can change effective intrinsics. Convert 35 mm equivalent focal length only with a justified convention and known crop or request a usable FOV. Never infer sensor size from a filename or device label.
 
-- Horizontal FOV: `fx = W / (2 * tan(horizontal_fov / 2))`; `fy = fx`.
-- Physical focal length: `fx = focal_length_mm * W / sensor_width_mm`; `fy = focal_length_mm * H / sensor_height_mm`.
-- Both uncalibrated variants use `cx = (W - 1) / 2` and `cy = (H - 1) / 2`.
-- Projection for `Zc > 0`: `x = fx * Xc / Zc + cx`, `y = fy * Yc / Zc + cy`.
-
-Portrait rotation, crop, resizing, digital zoom, and stabilization can change the effective values. “35 mm equivalent focal length” is not interchangeable with physical focal length; convert only with an explicit justified convention and known crop, or request a usable FOV. Never supply a guessed phone sensor size based only on a filename/device label.
-
-v0.1 uses a pinhole model without lens-distortion correction or skew. The backend reports this as an approximation; ultra-wide/distorted images may be unsuitable. Supporting distortion coefficients later requires a named model and agreed revision. Background for focal lengths in pixels and resizing: [OpenCV camera model](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html).
+The backend reports the v0.1 pinhole approximation. Strongly distorted images may be unsuitable. Supporting distortion coefficients requires a named model and an agreed contract revision.
 
 ### Turbine
 
@@ -156,7 +142,7 @@ v0.1 uses a pinhole model without lens-distortion correction or skew. The backen
 | --- | --- | --- | --- |
 | `id` | Id | R | Request identifier for results, errors, and UI selection. Unique within the request. |
 | `name` | String, 1–200 chars | O | Human-readable source name; output label falls back to `Turbine 1`, `Turbine 2`, etc. by input order. Names need not be unique. |
-| `position` | Position | R | Source coordinates plus explicit base elevation. The WFS hub height is not base elevation. |
+| `position` | Position | R | Required `easting_m` and `northing_m` in EPSG:25832, plus explicit base elevation. The WFS hub height is not base elevation. |
 | `hub_height_m` | Positive Number | R | Hub centre above the turbine base. |
 | `rotor_diameter_m` | Positive Number | R | Rotor diameter, not radius or total height. |
 | `turbine_type` | String, 1–200 chars | O | Manufacturer/model/type description if present. Not required by the schematic geometry. |
@@ -175,7 +161,7 @@ Checked on 9 November 2026 using [GetCapabilities](https://www.wfs.nrw.de/umwelt
 
 | Source | Contract target / rule |
 | --- | --- |
-| `msGeometry` | `position.longitude_deg/latitude_deg` after CRS and axis-order conversion; do not assume raw GML coordinates are longitude/latitude. Base elevation needs a separate source. |
+| `msGeometry` | `position.easting_m` and `position.northing_m` in EPSG:25832. Read the geometry CRS and axis order. Map an already compatible tuple directly and transform other source CRSs at the adapter boundary. Base elevation needs a separate source. |
 | `nabenhoehe_m` | `hub_height_m`. Source schema declares a string; parse and validate explicitly. |
 | `durchmesser_m` | `rotor_diameter_m`; likewise parse the source string. |
 | `name_einheit` | Optional `name`; omit empty text. |
@@ -201,7 +187,7 @@ The reserved `ReferencePoint` type is:
 | --- | --- | --- | --- |
 | `id` | Id | Yes | Stable pairing and diagnostics identifier. |
 | `image_point` | PixelPoint | Yes | Click in the backend-normalized photograph, using the matching preview coordinate frame. |
-| `map_position` | Coordinates | Yes | The same physical feature identified in the overhead image, converted to WGS84. |
+| `map_position` | ProjectedCoordinates | Yes | The same physical feature identified in the overhead image, in EPSG:25832. |
 | `map_source` | String | Optional | Orthophoto/source identifier for provenance, not a URL to fetch blindly. |
 | `map_date` | String | Optional | Source date/version if known. |
 
@@ -211,7 +197,7 @@ Illustrative future entry:
 {
   "id": "anchor-1",
   "image_point": {"x_px": 410.5, "y_px": 380.25},
-  "map_position": {"longitude_deg": 7.5101, "latitude_deg": 52.1101},
+  "map_position": {"easting_m": 397971.486, "northing_m": 5774330.976},
   "map_source": "documented-orthophoto-layer",
   "map_date": "2026"
 }
@@ -223,7 +209,7 @@ Nonempty points are rejected in v0.1. Before enabling them in a later version, d
 
 ## 7. Request example and browser submission
 
-[request-example.json](api/request-example.json) supplies complete explicit camera overrides for a two-turbine request. [request-exif-example.json](api/request-exif-example.json) omits `camera` entirely. [request-partial-override-example.json](api/request-partial-override-example.json) overrides only heading and focal length, demonstrating leaf-level fallback. All examples validate as request JSON; EXIF-only and partial examples render only if the accompanying image supplies the remaining usable camera values. Coordinates, dimensions, camera values, and feature IDs are **illustrative**, not verified demo measurements or real WFS IDs. The full-override example must accompany a photo whose backend-normalized size is 1200 × 800; the other examples let the backend determine dimensions. Use real, checked WFS records for acceptance.
+[request-example.json](api/request-example.json) supplies complete camera overrides with WGS84 position input and two turbines in EPSG:25832. [request-exif-example.json](api/request-exif-example.json) omits `camera` entirely. [request-partial-override-example.json](api/request-partial-override-example.json) overrides easting, heading and focal length, demonstrating per-field fallback. All examples validate as request JSON; EXIF-only and partial examples render only if the accompanying image supplies the remaining usable camera values. Coordinates, dimensions, camera values, and feature IDs are **illustrative**, not verified demo measurements or real WFS IDs. The full-override example must accompany a photo whose backend-normalized size is 1200 × 800; the other examples let the backend determine dimensions. Use real, checked WFS records for acceptance.
 
 ```js
 // originalImageFile is the selected File, with its EXIF preserved.
@@ -260,8 +246,8 @@ Return `200 OK` with `Cache-Control: no-store`. v0.1 returns the PNG inline as b
 | `api_version` | `"0.1"` | Contract version. |
 | `request_id` | String | Opaque server-generated correlation ID. |
 | `image` | Object | `mime_type: "image/png"`, `encoding: "base64"`, `data` (base64 without a data-URL prefix), `width_px`, `height_px`. Output uses the backend-normalized raster dimensions, which may swap after EXIF orientation handling. |
-| `camera_used` | Object | Effective `position` and `orientation` plus normalized `intrinsics: {fx_px, fy_px, cx_px, cy_px}`. Contains the complete values after EXIF resolution and explicit overrides, not merely the submitted fields. |
-| `camera_value_sources` | Object | JSON Pointer into `camera_used` → `{source, input_paths?, exif_tags?}`. `source` is `override`, `exif`, or `derived`. Record each effective numeric camera value. `input_paths` is an optional array of JSON Pointers into the submitted parameters; `exif_tags` is an optional array of used tag names. Derived intrinsics identify the supplied fields and/or tags used; image-centre defaults come from normalized raster dimensions and the stated pinhole model. Tag names only, never a full raw EXIF dump. Client provenance is supplementary, not a replacement for backend resolution provenance. |
+| `camera_used` | Object | Effective `position` (`easting_m`, `northing_m` in EPSG:25832 and elevation in DHHN2016/NHN) and `orientation` plus normalized `intrinsics: {fx_px, fy_px, cx_px, cy_px}`. Contains the complete values after EXIF resolution and explicit overrides, not merely the submitted fields. |
+| `camera_value_sources` | Object | JSON Pointer into `camera_used` → `{source, input_paths?, exif_tags?}`. `source` is `override`, `exif`, or `derived`. Record each effective numeric camera value. Projected axes calculated from geographic or EXIF inputs use `derived` and identify the input fields and/or EXIF tags. An explicit projected axis retains `override`. `input_paths` is an optional array of JSON Pointers into the submitted parameters; `exif_tags` is an optional array of used tag names. Derived intrinsics identify the supplied fields and/or tags used; image-centre defaults come from normalized raster dimensions and the stated pinhole model. Tag names only, never a full raw EXIF dump. Client provenance is supplementary, not a replacement for backend resolution provenance. |
 | `turbines` | TurbineResult[] | One result per requested turbine, in request order. |
 | `warnings` | Warning[] | Always present, possibly empty; no warning-as-success replacement for invalid required inputs. |
 | `calibration` | Object | `{ "applied": false }` in v0.1. |
@@ -311,6 +297,7 @@ Use safe image decoding and temporary resource cleanup. Do not log photos, preci
 
 ### Contract verification required for implementation
 
+- Require both EPSG:25832 axes for each turbine and reject geographic fields there. Verify both camera input representations resolve to the same projected position and reject requests mixing coordinate systems inside the camera position.
 - EXIF-only input, an omitted `camera`, and empty camera/nested objects produce the same resolved result for the same supported fixture.
 - Partial longitude/latitude/orientation/intrinsics overrides replace only supplied values; explicit zero is preserved. Full overrides work without camera EXIF.
 - Invalid/null overrides fail validation even if EXIF could supply valid alternatives. Unknown fields and mixed intrinsic variants remain invalid.
