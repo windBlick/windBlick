@@ -4,6 +4,9 @@ import math
 from dataclasses import dataclass
 from typing import Self
 
+# Keep the perspective divide away from the camera plane.
+NEAR_DEPTH_M = 1e-6
+
 
 @dataclass(frozen=True, kw_only=True)
 class CameraIntrinsics:
@@ -162,9 +165,72 @@ class CameraProjection:
         right, down, depth = self.to_camera(point_enu_m)
         if depth <= 0:
             return None
+        return self._pixel_at_depth(right, down, depth)
+
+    def _pixel_at_depth(
+        self, right: float, down: float, depth: float
+    ) -> tuple[float, float]:
         intrinsics = self._intrinsics
         x_px = intrinsics.cx_px + intrinsics.fx_px * (right / depth)
         y_px = intrinsics.cy_px + intrinsics.fy_px * (down / depth)
         if not math.isfinite(x_px) or not math.isfinite(y_px):
             raise ValueError("Projected pixel coordinates must be finite")
         return x_px, y_px
+
+    @property
+    def image_size(self) -> tuple[int, int]:
+        """Return the normalized raster's width and height in pixels."""
+        return self._intrinsics.width_px, self._intrinsics.height_px
+
+    def clip_and_project_segment(
+        self,
+        start_camera_m: tuple[float, float, float],
+        end_camera_m: tuple[float, float, float],
+    ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Clip a camera-space segment and return its pixel endpoints, if visible.
+
+        Input axes are right/down/forward in metres. Clip before dividing by
+        depth so a segment that crosses the camera plane remains bounded.
+        Raise ValueError for non-finite camera-space coordinates.
+        """
+        if not all(math.isfinite(value) for value in (*start_camera_m, *end_camera_m)):
+            raise ValueError("Camera-space segment endpoints must be finite")
+        intrinsics = self._intrinsics
+        width, height = self.image_size
+
+        def plane_margins(point: tuple[float, float, float]) -> tuple[float, ...]:
+            right, down, depth = point
+            # Multiplying the image bounds by depth avoids dividing at the plane.
+            x = intrinsics.fx_px * right + intrinsics.cx_px * depth
+            y = intrinsics.fy_px * down + intrinsics.cy_px * depth
+            return (
+                depth - NEAR_DEPTH_M,
+                x,
+                (width - 1) * depth - x,
+                y,
+                (height - 1) * depth - y,
+            )
+
+        first, last = 0.0, 1.0
+        for start_margin, end_margin in zip(
+            plane_margins(start_camera_m), plane_margins(end_camera_m), strict=True
+        ):
+            if start_margin < 0 and end_margin < 0:
+                return None
+            if start_margin < 0:
+                first = max(first, start_margin / (start_margin - end_margin))
+            elif end_margin < 0:
+                last = min(last, start_margin / (start_margin - end_margin))
+            if first > last:
+                return None
+
+        def project_at(fraction: float) -> tuple[float, float]:
+            right, down, depth = (
+                (1 - fraction) * start + fraction * end
+                for start, end in zip(start_camera_m, end_camera_m, strict=True)
+            )
+            # Round-off can leave clipped endpoints slightly outside the raster.
+            x, y = self._pixel_at_depth(right, down, max(NEAR_DEPTH_M, depth))
+            return max(0.0, min(width - 1, x)), max(0.0, min(height - 1, y))
+
+        return project_at(first), project_at(last)
