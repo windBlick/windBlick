@@ -11,6 +11,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.162.3",
     "pillow>=13.0.0",
+    "pyproj>=3.7.2",
 ]
 
 [build-system]
