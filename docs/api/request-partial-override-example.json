@@ -5,8 +5,8 @@
       "id": "turbine-1",
       "name": "Illustrative approved turbine",
       "position": {
-        "longitude_deg": 7.51,
-        "latitude_deg": 52.11,
+        "easting_m": 397964.41,
+        "northing_m": 5774319.995,
         "elevation": {
           "value_m": 60,
           "datum": "DHHN2016_NHN",
@@ -28,8 +28,8 @@
     {
       "id": "turbine-2",
       "position": {
-        "longitude_deg": 7.512,
-        "latitude_deg": 52.112,
+        "easting_m": 398105.923,
+        "northing_m": 5774539.617,
         "elevation": {
           "value_m": 62,
           "datum": "DHHN2016_NHN",
@@ -50,6 +50,9 @@
   ],
   "reference_points": [],
   "camera": {
+    "position": {
+      "easting_m": 397256.664
+    },
     "orientation": {
       "heading_deg": 45
     },
@@ -62,6 +65,9 @@
       "source": "user_input"
     },
     "/camera/intrinsics/focal_length_mm": {
+      "source": "user_input"
+    },
+    "/camera/position/easting_m": {
       "source": "user_input"
     }
   }
