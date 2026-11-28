@@ -318,11 +318,13 @@
         },
         "hub_height_m": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 500
         },
         "rotor_diameter_m": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 500
         },
         "turbine_type": {
           "type": "string",
