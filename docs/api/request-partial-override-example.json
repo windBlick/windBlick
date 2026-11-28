@@ -51,10 +51,16 @@
   "reference_points": [],
   "camera": {
     "position": {
-      "easting_m": 397256.664
+      "easting_m": 397256.664,
+      "elevation": {
+        "value_m": 61.6,
+        "source": "fixture"
+      }
     },
     "orientation": {
-      "heading_deg": 45
+      "heading_deg": 45,
+      "pitch_deg": 0,
+      "roll_deg": 0
     },
     "intrinsics": {
       "focal_length_mm": 6

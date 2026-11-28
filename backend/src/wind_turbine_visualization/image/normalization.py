@@ -4,11 +4,12 @@ Pure domain logic: no FastAPI, no file paths. Operates on in-memory bytes
 so it is deterministic and unit-testable.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 
 from PIL import ExifTags, Image, ImageOps
 
+from wind_turbine_visualization.image.camera_exif import CameraExif, read_camera_exif
 from wind_turbine_visualization.image.errors import (
     InvalidImage,
     PixelLimitExceeded,
@@ -29,6 +30,8 @@ class NormalizedImage:
     image: Image.Image
     width_px: int
     height_px: int
+    original_orientation: int = 1
+    camera_exif: CameraExif = field(default_factory=CameraExif)
 
 
 def load_normalized_image(data: bytes, declared_mime_type: str) -> NormalizedImage:
@@ -60,12 +63,18 @@ def load_normalized_image(data: bytes, declared_mime_type: str) -> NormalizedIma
                 raise UnsupportedImageType()
             raw.verify()
         with Image.open(BytesIO(data), formats=(format_name,)) as reopened:
-            orientation = reopened.getexif().get(ExifTags.Base.Orientation, 1)
+            exif = reopened.getexif()
+            orientation = exif.get(ExifTags.Base.Orientation, 1)
             if type(orientation) is not int or not 1 <= orientation <= 8:
                 raise InvalidImage("Invalid EXIF image orientation.")
+            camera_exif = read_camera_exif(
+                exif, size=reopened.size, orientation=orientation
+            )
             upright = ImageOps.exif_transpose(reopened)
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise PixelLimitExceeded("Image exceeds the decoded pixel limit.") from exc
     except (OSError, SyntaxError, ValueError) as exc:
         raise InvalidImage("Image bytes could not be decoded.") from exc
-    return NormalizedImage(upright, upright.width, upright.height)
+    return NormalizedImage(
+        upright, upright.width, upright.height, orientation, camera_exif
+    )

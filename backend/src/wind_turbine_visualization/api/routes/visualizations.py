@@ -1,131 +1,101 @@
-"""Upload endpoint for the visualization pipeline.
+"""HTTP adapter for the windBlick visualization pipeline."""
 
-B1 scope: accept the multipart ``image`` part, normalize EXIF orientation,
-and report the normalized image dimensions. Camera-parameter resolution,
-turbine rendering, and the final PNG response are added by later issues;
-until then this route returns the normalized dimensions as an interim
-diagnostic so the upload and rejection behaviour is reachable over HTTP.
+import logging
+from http import HTTPStatus
+from threading import BoundedSemaphore
+from uuid import uuid4
 
-Only this layer imports FastAPI. All decoding logic lives in the
-framework-free ``wind_turbine_visualization.image`` package.
-"""
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+from starlette.requests import ClientDisconnect
 
-from collections.abc import Awaitable, Callable
+from wind_turbine_visualization.api.multipart import VisualizationUpload, read_upload
+from wind_turbine_visualization.api.problems import VisualizationProblem
+from wind_turbine_visualization.api.visualization import render_visualization
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
-from fastapi.routing import APIRoute
-from starlette.types import Message
-
-from wind_turbine_visualization.image import (
-    InvalidImage,
-    PixelLimitExceeded,
-    UnsupportedImageType,
-    load_normalized_image,
-)
-
-MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MiB image
-MAX_REQUEST_BYTES = 22 * 1024 * 1024  # 20 MiB image, 1 MiB JSON and multipart overhead
+router = APIRouter(prefix="/api/v0", tags=["visualizations"])
+logger = logging.getLogger(__name__)
+RENDER_SLOTS = BoundedSemaphore(2)
+NO_STORE = {"Cache-Control": "no-store"}
 
 
-def _problem(status_code: int, code: str, detail: str) -> JSONResponse:
-    """Build an RFC 9457 ``application/problem+json`` error response.
-
-    Args:
-        status_code: HTTP status code.
-        code: Stable application error code from the API contract.
-        detail: Human-readable, non-sensitive explanation.
-
-    Returns:
-        A JSON response using the ``application/problem+json`` media type.
-    """
+def _problem(problem: VisualizationProblem, request_id: str) -> JSONResponse:
+    content = {
+        "type": "about:blank",
+        "title": HTTPStatus(problem.status).phrase,
+        "status": problem.status,
+        "code": problem.code,
+        "detail": str(problem),
+        "errors": problem.errors,
+        "request_id": request_id,
+    }
+    if problem.part is not None:
+        content["part"] = problem.part
     return JSONResponse(
-        status_code=status_code,
+        status_code=problem.status,
         media_type="application/problem+json",
-        content={
-            "type": "about:blank",
-            "title": code.replace("_", " ").title(),
-            "status": status_code,
-            "code": code,
-            "detail": detail,
-            "errors": [],
-        },
+        content=content,
+        headers=NO_STORE,
     )
 
 
-class RequestTooLarge(HTTPException):
-    """Abort multipart parsing when the request body exceeds its limit."""
-
-
-class LimitedUploadRoute(APIRoute):
-    """Limit the request stream before FastAPI parses the multipart body."""
-
-    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
-        """Wrap the generated handler with a byte limit for its body stream."""
-        handler = super().get_route_handler()
-
-        async def limited_handler(request: Request) -> Response:
-            received_bytes = 0
-
-            async def receive() -> Message:
-                nonlocal received_bytes
-                message = await request.receive()
-                if message["type"] == "http.request":
-                    received_bytes += len(message.get("body", b""))
-                    if received_bytes > MAX_REQUEST_BYTES:
-                        raise RequestTooLarge(status_code=413)
-                return message
-
-            try:
-                return await handler(Request(request.scope, receive))
-            except RequestTooLarge:
-                return _problem(
-                    413, "REQUEST_TOO_LARGE", "Request body exceeds the 22 MiB limit."
-                )
-
-        return limited_handler
-
-
-router = APIRouter(
-    prefix="/api/v0", tags=["visualizations"], route_class=LimitedUploadRoute
-)
-
-
-@router.post("/visualizations")
-def create_visualization(image: UploadFile) -> JSONResponse:
-    """Accept an uploaded image and return its normalized dimensions.
-
-    Args:
-        image: The multipart ``image`` part (JPEG or PNG).
-
-    Returns:
-        ``200`` with the orientation-normalized width/height on success, or a
-        problem response: ``413`` if too large, ``415`` for an unsupported
-        media type, ``422`` if the bytes cannot be decoded.
-    """
-    if image.size is not None and image.size > MAX_IMAGE_BYTES:
-        return _problem(
-            413, "IMAGE_TOO_LARGE", "Image exceeds the 20 MiB upload limit."
-        )
-    data = image.file.read(MAX_IMAGE_BYTES + 1)
-    if len(data) > MAX_IMAGE_BYTES:
-        return _problem(
-            413, "IMAGE_TOO_LARGE", "Image exceeds the 20 MiB upload limit."
+def _render(upload: VisualizationUpload, request_id: str) -> JSONResponse:
+    if not RENDER_SLOTS.acquire(blocking=False):
+        raise VisualizationProblem(
+            503, "RENDER_CAPACITY_EXCEEDED", "The renderer is busy. Try again shortly."
         )
     try:
-        result = load_normalized_image(data, image.content_type or "")
-    except UnsupportedImageType as exc:
-        return _problem(415, exc.code, str(exc))
-    except PixelLimitExceeded as exc:
-        return _problem(413, exc.code, str(exc))
-    except InvalidImage as exc:
-        return _problem(422, exc.code, str(exc))
-    return JSONResponse(
-        status_code=200,
-        content={
-            "image": {
-                "width_px": result.width_px,
-                "height_px": result.height_px,
-            }
-        },
-    )
+        return JSONResponse(render_visualization(upload, request_id), headers=NO_STORE)
+    finally:
+        RENDER_SLOTS.release()
+
+
+@router.post(
+    "/visualizations",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["image", "parameters"],
+                        "properties": {
+                            "image": {"type": "string", "format": "binary"},
+                            "parameters": {"type": "string", "format": "binary"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "encoding": {
+                        "image": {"contentType": "image/jpeg, image/png"},
+                        "parameters": {"contentType": "application/json"},
+                    },
+                }
+            },
+        }
+    },
+)
+async def create_visualization(request: Request) -> JSONResponse:
+    """Render a photo using a multipart image and its v0.1 parameter document."""
+    request_id = uuid4().hex
+    try:
+        upload = await read_upload(
+            request.headers.get("content-type", ""), request.stream()
+        )
+        return await run_in_threadpool(_render, upload, request_id)
+    except VisualizationProblem as exc:
+        return _problem(exc, request_id)
+    except ClientDisconnect:
+        return _problem(
+            VisualizationProblem(400, "INVALID_MULTIPART", "The upload ended early."),
+            request_id,
+        )
+    except Exception as exc:
+        logger.error("Visualization %s failed (%s)", request_id, type(exc).__name__)
+        return _problem(
+            VisualizationProblem(
+                500, "INTERNAL_ERROR", "The visualization could not be rendered."
+            ),
+            request_id,
+        )
